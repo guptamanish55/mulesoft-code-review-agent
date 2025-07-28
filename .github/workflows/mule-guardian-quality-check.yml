@@ -23,13 +23,13 @@ jobs:
       
     # Step 2: Setup Python (for Mule Guardian)
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
     # Step 3: Setup Java (required for PMD)
     - name: Set up Java
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '11'
@@ -197,10 +197,10 @@ jobs:
                 f.write('<html><body><h1>Report Generation Failed</h1><p>Please check the logs for details.</p></body></html>')
         "
         
-    # Step 9: Upload Reports as Artifacts
+    # Step 9: Upload Reports as Artifacts (FIXED VERSION)
     - name: Upload Quality Reports
       if: always()  # Always upload, even if analysis failed
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: mule-guardian-quality-report
         path: |
@@ -208,10 +208,10 @@ jobs:
           quality-report.html
         retention-days: 30
         
-    # Step 10: Comment on Pull Request (optional)
+    # Step 10: Comment on Pull Request (FIXED VERSION)
     - name: Comment PR with Results
       if: github.event_name == 'pull_request'
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       with:
         script: |
           const fs = require('fs');
