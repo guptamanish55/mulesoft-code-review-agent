@@ -10,7 +10,7 @@ on:
 # Environment variables
 env:
   COMPLIANCE_THRESHOLD: 75  # Minimum compliance percentage required
-  PMD_VERSION: "6.55.0"
+  PMD_VERSION: "7.0.0"
 
 jobs:
   code-quality-check:
@@ -34,15 +34,53 @@ jobs:
         distribution: 'temurin'
         java-version: '11'
         
-    # Step 4: Install PMD
+    # Step 4: Install PMD with fallback methods
     - name: Install PMD
       run: |
         echo "📦 Installing PMD..."
-        wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ env.PMD_VERSION }}/pmd-dist-${{ env.PMD_VERSION }}-bin.zip
-        unzip pmd-dist-${{ env.PMD_VERSION }}-bin.zip
-        sudo mv pmd-bin-${{ env.PMD_VERSION }} /opt/pmd
+        
+        # Method 1: Try direct download with current format
+        if wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ env.PMD_VERSION }}/pmd-bin-${{ env.PMD_VERSION }}.zip; then
+          echo "✅ Downloaded PMD using current format"
+          unzip pmd-bin-${{ env.PMD_VERSION }}.zip
+          sudo mv pmd-bin-${{ env.PMD_VERSION }} /opt/pmd
+        # Method 2: Try alternative URL format  
+        elif wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ env.PMD_VERSION }}/pmd-dist-${{ env.PMD_VERSION }}-bin.zip; then
+          echo "✅ Downloaded PMD using alternative format"
+          unzip pmd-dist-${{ env.PMD_VERSION }}-bin.zip
+          sudo mv pmd-bin-${{ env.PMD_VERSION }} /opt/pmd
+        # Method 3: Try latest stable version
+        elif wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.0.0/pmd-bin-7.0.0.zip; then
+          echo "✅ Downloaded PMD 7.0.0 as fallback"
+          unzip pmd-bin-7.0.0.zip
+          sudo mv pmd-bin-7.0.0 /opt/pmd
+        # Method 4: Use package manager as last resort
+        else
+          echo "⚠️ Direct download failed, trying package manager..."
+          sudo apt-get update
+          sudo apt-get install -y pmd
+          # Create symlink for consistency
+          if command -v pmd >/dev/null 2>&1; then
+            sudo mkdir -p /opt/pmd/bin
+            sudo ln -sf $(which pmd) /opt/pmd/bin/pmd
+            echo "✅ PMD installed via package manager"
+          else
+            echo "❌ PMD installation failed completely"
+            exit 1
+          fi
+        fi
+        
+        # Add to PATH and verify installation
         echo "/opt/pmd/bin" >> $GITHUB_PATH
-        echo "✅ PMD installed successfully"
+        export PATH="/opt/pmd/bin:$PATH"
+        
+        # Verify PMD is working
+        if /opt/pmd/bin/pmd --version; then
+          echo "✅ PMD installed and verified successfully"
+        else
+          echo "❌ PMD installation verification failed"
+          exit 1
+        fi
         
     # Step 5: Install Mule Guardian Dependencies
     - name: Install Python Dependencies
