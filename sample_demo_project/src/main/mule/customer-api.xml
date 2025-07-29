@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+    <!-- VIOLATION: Flow without error handling -->
+    <flow name="customer-api-main">
+        <http:listener config-ref="HTTP_Listener_Config" path="/api/v1/customers"/>
+        
+        <!-- VIOLATION: Logging sensitive data -->
+        <logger level="INFO" message="Request: #[payload] Headers: #[attributes.headers]"/>
+        
+        <choice>
+            <when expression="#[attributes.method == 'GET']">
+                <flow-ref name="get-customers-flow"/>
+            </when>
+            <otherwise>
+                <!-- VIOLATION: Hardcoded response -->
+                <set-payload value='{"error": "Method not allowed"}'/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <!-- VIOLATION: Poor naming convention -->
+    <flow name="getCustomers">
+        <db:select config-ref="Database_Config">
+            <!-- VIOLATION: SQL injection risk -->
+            <db:sql>SELECT * FROM customers WHERE status = 'ACTIVE'</db:sql>
+        </db:select>
+        
+        <!-- VIOLATION: Exposing sensitive data -->
+        <ee:transform>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    customers: payload map {
+        id: $.customer_id,
+        firstName: $.first_name,
+        lastName: $.last_name,
+        email: $.email,
+        ssn: $.ssn,
+        creditScore: $.credit_score
+    }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+</mule>

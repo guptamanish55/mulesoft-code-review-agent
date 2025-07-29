@@ -1,0 +1,12 @@
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/pmd-report.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/pom.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/pom.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/mule/api-gateway.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/mule/customer-api.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/mule/global-config.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/mule/integration-flows.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/mule/order-api.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/resources/config.properties
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/resources/log4j2.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/test/munit/customer-api-test.xml
+/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/test/munit/order-api-test.xml

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+    <!-- VIOLATION: Flow without error handling -->
+    <flow name="order-api-main">
+        <http:listener config-ref="HTTP_Listener_Config" path="/api/v1/orders"/>
+        
+        <!-- VIOLATION: Hardcoded credentials -->
+        <logger level="INFO" message="Processing order with API key: admin123"/>
+        
+        <set-payload value='{"message": "Order processed"}'/>
+    </flow>
+
+</mule>
