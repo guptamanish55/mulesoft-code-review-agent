@@ -1,5 +1,0 @@
-/Users/guptamanish/Desktop/CodeReview/sample_demo_project/pmd-report.xml
-/Users/guptamanish/Desktop/CodeReview/sample_demo_project/pom.xml
-/Users/guptamanish/Desktop/CodeReview/sample_demo_project/pom.xml
-/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/mule/api-gateway.xml
-/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/resources/config.properties
