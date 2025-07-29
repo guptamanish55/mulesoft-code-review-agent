@@ -3,9 +3,9 @@ name: Mule Guardian Code Quality Check
 # When this workflow runs
 on:
   push:
-    branches: [ main, dev ]  # Adjust branch names as needed
+    branches: [ main, develop, dev ]  # Added 'dev' for your branch
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main, develop, dev ]
 
 # Environment variables
 env:
@@ -21,6 +21,40 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
       
+    # Step 1.5: Get core files from main branch if not present
+    - name: Get Core Mule Guardian Files
+      run: |
+        echo "🔍 Checking for core Mule Guardian files..."
+        
+        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
+          echo "⚠️ Core files not found in current branch, fetching from main..."
+          
+          # Fetch main branch
+          git fetch origin main
+          
+          # Copy core files from main branch
+          git show main:mulesoft_ai_code_review_agent.py > mulesoft_ai_code_review_agent.py
+          git show main:comprehensive-mulesoft-ruleset-no-debug.xml > comprehensive-mulesoft-ruleset-no-debug.xml
+          git show main:requirements.txt > requirements.txt
+          
+          echo "✅ Core files copied from main branch"
+        else
+          echo "✅ Core files found in current branch"
+        fi
+        
+        # Verify files exist
+        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
+          echo "❌ Error: mulesoft_ai_code_review_agent.py still not found"
+          exit 1
+        fi
+        
+        if [ ! -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          echo "❌ Error: comprehensive-mulesoft-ruleset-no-debug.xml still not found"
+          exit 1
+        fi
+        
+        echo "✅ All required files verified"
+      
     # Step 2: Setup Python (for Mule Guardian)
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -34,7 +68,7 @@ jobs:
         distribution: 'temurin'
         java-version: '11'
         
-    # Step 4: Install PMD with fallback methods
+    # Step 4: Install PMD with fallback methods (FIXED FOR LINUX)
     - name: Install PMD
       run: |
         echo "📦 Installing PMD..."
@@ -70,17 +104,33 @@ jobs:
           fi
         fi
         
-        # Add to PATH and verify installation
-        echo "/opt/pmd/bin" >> $GITHUB_PATH
-        export PATH="/opt/pmd/bin:$PATH"
+        # CRITICAL FIX: Create the path structure that Mule Guardian expects
+        echo "🔗 Creating expected PMD paths for Mule Guardian..."
+        sudo mkdir -p /opt/homebrew/bin
+        sudo ln -sf /opt/pmd/bin/pmd /opt/homebrew/bin/pmd
         
-        # Verify PMD is working
+        # Also add both paths to PATH for maximum compatibility
+        echo "/opt/pmd/bin" >> $GITHUB_PATH
+        echo "/opt/homebrew/bin" >> $GITHUB_PATH
+        export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
+        
+        # Verify PMD is accessible from both locations
+        echo "🧪 Verifying PMD installation..."
         if /opt/pmd/bin/pmd --version; then
-          echo "✅ PMD installed and verified successfully"
+          echo "✅ PMD verified at /opt/pmd/bin/pmd"
         else
-          echo "❌ PMD installation verification failed"
+          echo "❌ PMD verification failed at /opt/pmd/bin/pmd"
           exit 1
         fi
+        
+        if /opt/homebrew/bin/pmd --version; then
+          echo "✅ PMD verified at /opt/homebrew/bin/pmd (Mule Guardian expected path)"
+        else
+          echo "❌ PMD verification failed at /opt/homebrew/bin/pmd"
+          exit 1
+        fi
+        
+        echo "✅ PMD installed and verified successfully at both locations"
         
     # Step 5: Install Mule Guardian Dependencies
     - name: Install Python Dependencies
@@ -91,27 +141,34 @@ jobs:
         pip install requests==2.32.4 pathlib2==2.3.7 dataclasses-json==0.6.1
         echo "✅ Dependencies installed successfully"
         
-    # Step 6: Run Mule Guardian Analysis
+    # Step 6: Run Mule Guardian Analysis (FIXED PATH)
     - name: Run Mule Guardian Analysis
       id: mule-analysis
       run: |
         echo "🔍 Starting Mule Guardian analysis..."
         
-        # Check if Mule Guardian files exist
+        # Determine what to analyze
+        if [ -d "sample_demo_project" ]; then
+          echo "📍 Found sample project - analyzing sample_demo_project/"
+          ANALYSIS_TARGET="sample_demo_project"
+        else
+          echo "📍 Analyzing current directory"
+          ANALYSIS_TARGET="."
+        fi
+        
+        # Verify core files exist
         if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
-          echo "❌ Error: mulesoft_ai_code_review_agent.py not found in repository"
-          echo "Please ensure Mule Guardian files are in your repository"
+          echo "❌ Error: mulesoft_ai_code_review_agent.py not found"
           exit 1
         fi
         
         if [ ! -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
           echo "❌ Error: comprehensive-mulesoft-ruleset-no-debug.xml not found"
-          echo "Please ensure the PMD ruleset file is in your repository"
           exit 1
         fi
         
-        # Run the analysis
-        python mulesoft_ai_code_review_agent.py . comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v
+        # Run the analysis on the correct target
+        python mulesoft_ai_code_review_agent.py "$ANALYSIS_TARGET" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v
         
         # Extract compliance percentage from report
         COMPLIANCE=$(python -c "
@@ -290,4 +347,4 @@ jobs:
             
           } catch (error) {
             console.log('Could not post PR comment:', error.message);
-          }
+          } 
