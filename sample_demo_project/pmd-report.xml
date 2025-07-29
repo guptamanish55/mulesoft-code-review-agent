@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pmd xmlns="http://pmd.sourceforge.net/report/2.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://pmd.sourceforge.net/report/2.0.0 https://pmd.github.io/schema/report_2_0_0.xsd" version="7.15.0" timestamp="2025-07-25T15:56:54.783">
+<file name="/Users/guptamanish/Desktop/CodeReview/sample_demo_project/pom.xml">
+<violation beginline="2" endline="62" begincolumn="1" endcolumn="10" rule="PropertiesCamelCaseValidation" ruleset="Comprehensive Mule Guardian Code Review Ruleset - No Debug Logging" priority="3">
+Properties/fields were defined using camelCase
+</violation>
+</file>
+<error filename="/Users/guptamanish/Desktop/CodeReview/sample_demo_project/src/main/mule/api-gateway.xml" msg="ParseException: Parse exception: org.xml.sax.SAXParseException; lineNumber: 1; columnNumber: 2; Premature end of file.">
+<![CDATA[net.sourceforge.pmd.lang.ast.ParseException: Parse exception: org.xml.sax.SAXParseException; lineNumber: 1; columnNumber: 2; Premature end of file.
+	at net.sourceforge.pmd.lang.xml.ast.internal.XmlParserImpl.parseDocument(XmlParserImpl.java:55)
+	at net.sourceforge.pmd.lang.xml.ast.internal.XmlParserImpl.parse(XmlParserImpl.java:62)
+	at net.sourceforge.pmd.lang.xml.XmlParser.parse(XmlParser.java:19)
+	at net.sourceforge.pmd.lang.xml.XmlParser.parse(XmlParser.java:15)
+	at net.sourceforge.pmd.lang.impl.PmdRunnable.parse(PmdRunnable.java:112)
+	at net.sourceforge.pmd.lang.impl.PmdRunnable.processSource(PmdRunnable.java:132)
+	at net.sourceforge.pmd.lang.impl.PmdRunnable.run(PmdRunnable.java:80)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	at java.lang.Thread.run(Thread.java:750)
+Caused by: org.xml.sax.SAXParseException; lineNumber: 1; columnNumber: 2; Premature end of file.
+	at com.sun.org.apache.xerces.internal.parsers.DOMParser.parse(DOMParser.java:257)
+	at com.sun.org.apache.xerces.internal.jaxp.DocumentBuilderImpl.parse(DocumentBuilderImpl.java:338)
+	at net.sourceforge.pmd.lang.xml.ast.internal.XmlParserImpl.parseDocument(XmlParserImpl.java:53)
+	... 11 more
+]]>
+</error>
+</pmd>

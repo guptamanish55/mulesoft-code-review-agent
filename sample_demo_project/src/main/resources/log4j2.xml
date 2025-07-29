@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- VIOLATION: Logging configuration without proper security considerations -->
+<Configuration status="WARN">
+    
+    <!-- VIOLATION: Missing configuration for different environments -->
+    
+    <Appenders>
+        <!-- Console Appender -->
+        <Console name="Console" target="SYSTEM_OUT">
+            <!-- VIOLATION: Logging pattern exposes sensitive information -->
+            <PatternLayout pattern="%d{ISO8601} %-5p [%t] %c{1}: %m - Payload: %X{payload} - Headers: %X{headers}%n"/>
+        </Console>
+        
+        <!-- File Appender for Application Logs -->
+        <RollingFile name="ApplicationLog" fileName="logs/application.log"
+                     filePattern="logs/application-%d{yyyy-MM-dd}-%i.log.gz">
+            <!-- VIOLATION: Log pattern that could expose sensitive data -->
+            <PatternLayout pattern="%d{ISO8601} %-5p [%t] %c{1}: %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy />
+                <SizeBasedTriggeringPolicy size="100 MB"/>
+            </Policies>
+            <!-- VIOLATION: Unlimited log retention -->
+            <DefaultRolloverStrategy max="999"/>
+        </RollingFile>
+        
+        <!-- VIOLATION: Separate error log without proper rotation -->
+        <File name="ErrorLog" fileName="logs/error.log">
+            <PatternLayout pattern="%d{ISO8601} %-5p [%t] %c{1}: %m%n%ex"/>
+            <!-- VIOLATION: No log level filtering -->
+        </File>
+        
+        <!-- VIOLATION: Database appender with hardcoded connection -->
+        <JDBC name="DatabaseLog" tableName="application_logs">
+            <ConnectionFactory>
+                <DataSource jndiName="java:/comp/env/jdbc/LoggingDB"/>
+            </ConnectionFactory>
+            <Column name="log_date" pattern="%d{ISO8601}"/>
+            <Column name="level" pattern="%-5p"/>
+            <Column name="logger" pattern="%c{1}"/>
+            <Column name="message" pattern="%m"/>
+            <!-- VIOLATION: Logging full exception stack traces to database -->
+            <Column name="exception" pattern="%ex"/>
+        </JDBC>
+        
+        <!-- VIOLATION: SMTP appender with credentials in configuration -->
+        <SMTP name="EmailAppender" 
+              subject="E-Commerce Platform Error"
+              to="admin@company.com"
+              from="noreply@company.com"
+              smtpHost="smtp.company.com"
+              smtpPort="587"
+              smtpUsername="noreply@company.com"
+              smtpPassword="EmailPassword789!"
+              bufferSize="1">
+            <PatternLayout pattern="%d{ISO8601} %-5p [%t] %c{1}: %m%n"/>
+            <!-- VIOLATION: Email notifications for all error levels -->
+            <ThresholdFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+        </SMTP>
+    </Appenders>
+    
+    <Loggers>
+        <!-- VIOLATION: Overly verbose logging for HTTP connector -->
+        <Logger name="org.mule.extension.http" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ApplicationLog"/>
+        </Logger>
+        
+        <!-- VIOLATION: Database connector logging at TRACE level -->
+        <Logger name="org.mule.extension.db" level="TRACE" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ApplicationLog"/>
+        </Logger>
+        
+        <!-- Application Loggers -->
+        <Logger name="com.company.ecommerce.customer" level="INFO" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ApplicationLog"/>
+        </Logger>
+        
+        <Logger name="com.company.ecommerce.order" level="INFO" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ApplicationLog"/>
+        </Logger>
+        
+        <!-- VIOLATION: Integration logs without proper filtering -->
+        <Logger name="com.company.ecommerce.integration" level="DEBUG" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ApplicationLog"/>
+            <AppenderRef ref="DatabaseLog"/>
+        </Logger>
+        
+        <!-- VIOLATION: Security events logging to multiple destinations -->
+        <Logger name="com.company.ecommerce.security" level="ALL" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ApplicationLog"/>
+            <AppenderRef ref="ErrorLog"/>
+            <AppenderRef ref="DatabaseLog"/>
+            <AppenderRef ref="EmailAppender"/>
+        </Logger>
+        
+        <!-- VIOLATION: Third-party library logging without restriction -->
+        <Logger name="org.apache" level="DEBUG" additivity="false">
+            <AppenderRef ref="ApplicationLog"/>
+        </Logger>
+        
+        <!-- Root Logger -->
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="ApplicationLog"/>
+            <!-- VIOLATION: All errors automatically emailed -->
+            <AppenderRef ref="ErrorLog" level="ERROR"/>
+            <AppenderRef ref="EmailAppender" level="ERROR"/>
+        </Root>
+    </Loggers>
+    
+    <!-- VIOLATION: Missing configuration for log monitoring -->
+    <!-- VIOLATION: No log sanitization rules -->
+    <!-- VIOLATION: Missing audit trail configuration -->
+    
+</Configuration> 
