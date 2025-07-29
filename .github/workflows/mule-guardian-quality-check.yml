@@ -3,9 +3,9 @@ name: Mule Guardian Code Quality Check
 # When this workflow runs
 on:
   push:
-    branches: [ main, dev ]  # Added 'dev' for your branch
+    branches: [ main, develop, dev ]  # Added 'dev' for your branch
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main, develop, dev ]
 
 # Environment variables
 env:
@@ -21,6 +21,40 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
       
+    # Step 1.5: Get core files from main branch if not present
+    - name: Get Core Mule Guardian Files
+      run: |
+        echo "🔍 Checking for core Mule Guardian files..."
+        
+        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
+          echo "⚠️ Core files not found in current branch, fetching from main..."
+          
+          # Fetch main branch
+          git fetch origin main
+          
+          # Copy core files from main branch
+          git show main:mulesoft_ai_code_review_agent.py > mulesoft_ai_code_review_agent.py
+          git show main:comprehensive-mulesoft-ruleset-no-debug.xml > comprehensive-mulesoft-ruleset-no-debug.xml
+          git show main:requirements.txt > requirements.txt
+          
+          echo "✅ Core files copied from main branch"
+        else
+          echo "✅ Core files found in current branch"
+        fi
+        
+        # Verify files exist
+        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
+          echo "❌ Error: mulesoft_ai_code_review_agent.py still not found"
+          exit 1
+        fi
+        
+        if [ ! -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          echo "❌ Error: comprehensive-mulesoft-ruleset-no-debug.xml still not found"
+          exit 1
+        fi
+        
+        echo "✅ All required files verified"
+      
     # Step 2: Setup Python (for Mule Guardian)
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -34,7 +68,7 @@ jobs:
         distribution: 'temurin'
         java-version: '11'
         
-    # Step 4: Install PMD with fallback methods (FIXED)
+    # Step 4: Install PMD with fallback methods (FIXED FOR LINUX)
     - name: Install PMD
       run: |
         echo "📦 Installing PMD..."
@@ -70,17 +104,33 @@ jobs:
           fi
         fi
         
-        # Add to PATH and verify installation
-        echo "/opt/pmd/bin" >> $GITHUB_PATH
-        export PATH="/opt/pmd/bin:$PATH"
+        # CRITICAL FIX: Create the path structure that Mule Guardian expects
+        echo "🔗 Creating expected PMD paths for Mule Guardian..."
+        sudo mkdir -p /opt/homebrew/bin
+        sudo ln -sf /opt/pmd/bin/pmd /opt/homebrew/bin/pmd
         
-        # Verify PMD is working
+        # Also add both paths to PATH for maximum compatibility
+        echo "/opt/pmd/bin" >> $GITHUB_PATH
+        echo "/opt/homebrew/bin" >> $GITHUB_PATH
+        export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
+        
+        # Verify PMD is accessible from both locations
+        echo "🧪 Verifying PMD installation..."
         if /opt/pmd/bin/pmd --version; then
-          echo "✅ PMD installed and verified successfully"
+          echo "✅ PMD verified at /opt/pmd/bin/pmd"
         else
-          echo "❌ PMD installation verification failed"
+          echo "❌ PMD verification failed at /opt/pmd/bin/pmd"
           exit 1
         fi
+        
+        if /opt/homebrew/bin/pmd --version; then
+          echo "✅ PMD verified at /opt/homebrew/bin/pmd (Mule Guardian expected path)"
+        else
+          echo "❌ PMD verification failed at /opt/homebrew/bin/pmd"
+          exit 1
+        fi
+        
+        echo "✅ PMD installed and verified successfully at both locations"
         
     # Step 5: Install Mule Guardian Dependencies
     - name: Install Python Dependencies
@@ -97,18 +147,23 @@ jobs:
       run: |
         echo "🔍 Starting Mule Guardian analysis..."
         
-        # Check if we're analyzing main branch (core files) or dev branch (sample project)
-        if [ -f "mulesoft_ai_code_review_agent.py" ]; then
-          echo "📍 Found core Mule Guardian files in current branch"
-          ANALYSIS_TARGET="."
-        elif [ -d "sample_demo_project" ]; then
+        # Determine what to analyze
+        if [ -d "sample_demo_project" ]; then
           echo "📍 Found sample project - analyzing sample_demo_project/"
           ANALYSIS_TARGET="sample_demo_project"
         else
-          echo "❌ Error: Neither core files nor sample project found"
-          echo "Please ensure your repository contains either:"
-          echo "  1. mulesoft_ai_code_review_agent.py (main branch)"
-          echo "  2. sample_demo_project/ folder (dev branch)"
+          echo "📍 Analyzing current directory"
+          ANALYSIS_TARGET="."
+        fi
+        
+        # Verify core files exist
+        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
+          echo "❌ Error: mulesoft_ai_code_review_agent.py not found"
+          exit 1
+        fi
+        
+        if [ ! -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          echo "❌ Error: comprehensive-mulesoft-ruleset-no-debug.xml not found"
           exit 1
         fi
         
@@ -237,7 +292,7 @@ jobs:
                 f.write('<html><body><h1>Report Generation Failed</h1><p>Please check the logs for details.</p></body></html>')
         "
         
-    # Step 9: Upload Reports as Artifacts
+    # Step 9: Upload Reports as Artifacts (FIXED VERSION)
     - name: Upload Quality Reports
       if: always()  # Always upload, even if analysis failed
       uses: actions/upload-artifact@v4
@@ -247,3 +302,49 @@ jobs:
           quality-report.json
           quality-report.html
         retention-days: 30
+        
+    # Step 10: Comment on Pull Request (FIXED VERSION)
+    - name: Comment PR with Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          try {
+            const report = JSON.parse(fs.readFileSync('quality-report.json', 'utf8'));
+            const compliance = '${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}';
+            
+            const statusEmoji = compliance >= 85 ? '🟢' : 
+                               compliance >= 75 ? '🟡' : '🔴';
+            
+            const statusText = compliance >= 85 ? 'Excellent' : 
+                              compliance >= 75 ? 'Good' : 'Needs Improvement';
+            
+            const body = `## ${statusEmoji} Mule Guardian Quality Check Results
+            
+            **Compliance Score:** ${compliance}% (${statusText})
+            **Total Issues:** ${report.total_violations || 0}
+            **Files Scanned:** ${report.files_scanned || 0}
+            
+            ### Violation Breakdown
+            - 🔴 **High Priority:** ${report.violations_by_priority?.HIGH || 0}
+            - 🟡 **Medium Priority:** ${report.violations_by_priority?.MEDIUM || 0}
+            - 🔵 **Low Priority:** ${report.violations_by_priority?.LOW || 0}
+            
+            ${compliance < 75 ? 
+              '❌ **Quality gate failed** - Please address violations before merging.' : 
+              '✅ **Quality gate passed** - Code meets standards!'}
+            
+            📋 [Download detailed report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+            
+          } catch (error) {
+            console.log('Could not post PR comment:', error.message);
+          } 
