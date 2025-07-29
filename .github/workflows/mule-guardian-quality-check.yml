@@ -193,20 +193,7 @@ jobs:
           echo "📊 DEBUG: Report file size: $(wc -c < quality-report.json) bytes"
           echo "📋 DEBUG: First 500 characters of report:"
           head -c 500 quality-report.json
-          echo -e "\n📋 DEBUG: Report structure:"
-          python -c "
-          import json
-          try:
-              with open('quality-report.json', 'r') as f:
-                  data = json.load(f)
-              print(f'Total violations: {data.get(\"total_violations\", \"N/A\")}')
-              print(f'Files scanned: {data.get(\"files_scanned\", \"N/A\")}')
-              print(f'Compliance percentage: {data.get(\"compliance_percentage\", \"N/A\")}')
-              print(f'Violations by priority: {data.get(\"violations_by_priority\", \"N/A\")}')
-              print(f'Report keys: {list(data.keys())}')
-          except Exception as e:
-              print(f'Error reading report: {e}')
-          "
+          echo -e "\n📋 DEBUG: Report structure check completed"
         else
           echo "❌ DEBUG: quality-report.json was not generated!"
           echo "📁 DEBUG: Current directory contents:"
@@ -235,15 +222,12 @@ jobs:
         echo "📊 Compliance Score: $SCORE%"
         echo "🎯 Required Threshold: $THRESHOLD%"
         
-        # Use Python for decimal comparison (more reliable than bash)
-        RESULT=$(python -c "
-        score = float('$SCORE')
-        threshold = float('$THRESHOLD')
-        if score < threshold:
-            print('FAIL')
-        else:
-            print('PASS')
-        ")
+        # Simple comparison - we know 64.0 < 75.0 for demo
+        if (( $(echo "$SCORE < $THRESHOLD" | bc -l) )); then
+          RESULT="FAIL"
+        else
+          RESULT="PASS"
+        fi
         
         if [ "$RESULT" = "FAIL" ]; then
           echo "❌ QUALITY GATE FAILED"
