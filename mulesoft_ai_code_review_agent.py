@@ -57,6 +57,7 @@ class CodeReviewReport:
     files_scanned: int
     excluded_files: List[str]
     summary: str
+    compliance_percentage: float
 
 class MuleSoftCodeReviewAgent:
     """Intelligent code review agent for MuleSoft projects"""
@@ -991,6 +992,15 @@ class MuleSoftCodeReviewAgent:
         clean_project_path = self._get_clean_project_path()
         clean_ruleset_path = self._get_clean_ruleset_path()
         
+        # Calculate compliance percentage
+        high_violations = violations_by_priority.get('HIGH', 0)
+        medium_violations = violations_by_priority.get('MEDIUM', 0)
+        low_violations = violations_by_priority.get('LOW', 0)
+        
+        # Weighted deduction: HIGH=3 points, MEDIUM=2 points, LOW=1 point
+        total_deduction = (high_violations * 3) + (medium_violations * 2) + (low_violations * 1)
+        compliance_percentage = max(20.0, 100.0 - total_deduction)  # Minimum 20% compliance
+        
         return CodeReviewReport(
             project_name=project_info['name'],
             project_path=clean_project_path,
@@ -1003,7 +1013,8 @@ class MuleSoftCodeReviewAgent:
             scan_duration=scan_duration,
             files_scanned=files_scanned,
             excluded_files=[],  # Could be enhanced to track excluded files
-            summary=summary
+            summary=summary,
+            compliance_percentage=compliance_percentage
         )
     
     def _get_clean_project_path(self) -> str:
