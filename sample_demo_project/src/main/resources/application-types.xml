@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- VIOLATION: Application types without proper versioning -->
+<application-types xmlns="http://www.mulesoft.org/schema/mule/core">
+
+    <!-- VIOLATION: Missing namespace declarations for proper XML validation -->
+    
+    <!-- Customer Data Type -->
+    <type name="Customer">
+        <annotation>
+            <description>Customer entity for e-commerce platform</description>
+        </annotation>
+        <object>
+            <property name="customerId" type="string" required="true"/>
+            <property name="firstName" type="string" required="true"/>
+            <property name="lastName" type="string" required="true"/>
+            <property name="email" type="string" required="true"/>
+            <property name="phone" type="string" required="false"/>
+            <!-- VIOLATION: Sensitive data type without encryption annotation -->
+            <property name="ssn" type="string" required="false"/>
+            <property name="creditScore" type="number" required="false"/>
+            <property name="status" type="string" required="true" default="ACTIVE"/>
+            <property name="createdDate" type="datetime" required="true"/>
+            <property name="modifiedDate" type="datetime" required="false"/>
+        </object>
+    </type>
+
+    <!-- Order Data Type -->
+    <type name="Order">
+        <annotation>
+            <description>Order entity with payment information</description>
+        </annotation>
+        <object>
+            <property name="orderId" type="string" required="true"/>
+            <property name="customerId" type="string" required="true"/>
+            <property name="status" type="OrderStatus" required="true"/>
+            <property name="totalAmount" type="number" required="true"/>
+            <!-- VIOLATION: Payment information in plain type definition -->
+            <property name="paymentInfo" type="PaymentInfo" required="true"/>
+            <property name="billingAddress" type="Address" required="true"/>
+            <property name="shippingAddress" type="Address" required="true"/>
+            <property name="items" type="array" required="true">
+                <items type="OrderItem"/>
+            </property>
+            <property name="createdDate" type="datetime" required="true"/>
+            <property name="modifiedDate" type="datetime" required="false"/>
+            <!-- VIOLATION: Internal system fields exposed in type definition -->
+            <property name="internalNotes" type="string" required="false"/>
+            <property name="processingFlags" type="string" required="false"/>
+        </object>
+    </type>
+
+    <!-- VIOLATION: Enum without proper validation constraints -->
+    <type name="OrderStatus">
+        <annotation>
+            <description>Valid order status values</description>
+        </annotation>
+        <union>
+            <type>string</type>
+        </union>
+        <!-- VIOLATION: Missing enum constraints -->
+    </type>
+
+    <!-- VIOLATION: Payment information type without security annotations -->
+    <type name="PaymentInfo">
+        <annotation>
+            <description>Payment information - SENSITIVE DATA</description>
+        </annotation>
+        <object>
+            <property name="creditCardNumber" type="string" required="true"/>
+            <property name="cvv" type="string" required="true"/>
+            <property name="expiryMonth" type="string" required="true"/>
+            <property name="expiryYear" type="string" required="true"/>
+            <property name="cardHolderName" type="string" required="true"/>
+            <!-- VIOLATION: No validation patterns for credit card format -->
+        </object>
+    </type>
+
+    <!-- Address Data Type -->
+    <type name="Address">
+        <annotation>
+            <description>Address information</description>
+        </annotation>
+        <object>
+            <property name="street" type="string" required="true"/>
+            <property name="city" type="string" required="true"/>
+            <property name="state" type="string" required="true"/>
+            <property name="zipCode" type="string" required="true"/>
+            <property name="country" type="string" required="true" default="US"/>
+            <!-- VIOLATION: No validation for postal code formats -->
+        </object>
+    </type>
+
+    <!-- Order Item Data Type -->
+    <type name="OrderItem">
+        <annotation>
+            <description>Individual item in an order</description>
+        </annotation>
+        <object>
+            <property name="productId" type="string" required="true"/>
+            <property name="productName" type="string" required="true"/>
+            <property name="quantity" type="number" required="true"/>
+            <property name="unitPrice" type="number" required="true"/>
+            <property name="totalPrice" type="number" required="true"/>
+            <!-- VIOLATION: No business rule validation for pricing consistency -->
+        </object>
+    </type>
+
+    <!-- API Response Types -->
+    <type name="ApiResponse">
+        <annotation>
+            <description>Standard API response wrapper</description>
+        </annotation>
+        <object>
+            <property name="success" type="boolean" required="true"/>
+            <property name="message" type="string" required="false"/>
+            <property name="data" type="any" required="false"/>
+            <property name="errors" type="array" required="false">
+                <items type="ApiError"/>
+            </property>
+            <!-- VIOLATION: Timestamp without timezone specification -->
+            <property name="timestamp" type="datetime" required="true"/>
+        </object>
+    </type>
+
+    <!-- VIOLATION: Error type without proper categorization -->
+    <type name="ApiError">
+        <annotation>
+            <description>API error details</description>
+        </annotation>
+        <object>
+            <property name="code" type="string" required="true"/>
+            <property name="message" type="string" required="true"/>
+            <property name="field" type="string" required="false"/>
+            <!-- VIOLATION: Exposing internal error details -->
+            <property name="internalCode" type="string" required="false"/>
+            <property name="stackTrace" type="string" required="false"/>
+        </object>
+    </type>
+
+    <!-- CRM Integration Types -->
+    <type name="CrmCustomer">
+        <annotation>
+            <description>Customer format for CRM system integration</description>
+        </annotation>
+        <object>
+            <property name="externalId" type="string" required="true"/>
+            <property name="firstName" type="string" required="true"/>
+            <property name="lastName" type="string" required="true"/>
+            <property name="email" type="string" required="true"/>
+            <property name="phone" type="string" required="false"/>
+            <!-- VIOLATION: Sending sensitive data to external systems -->
+            <property name="ssn" type="string" required="false"/>
+            <property name="creditScore" type="number" required="false"/>
+            <property name="customerType" type="string" required="true"/>
+            <property name="source" type="string" required="true"/>
+            <property name="syncedAt" type="datetime" required="true"/>
+        </object>
+    </type>
+
+    <!-- File Processing Types -->
+    <type name="FileProcessingResult">
+        <annotation>
+            <description>Result of file processing operation</description>
+        </annotation>
+        <object>
+            <property name="fileName" type="string" required="true"/>
+            <property name="totalRecords" type="number" required="true"/>
+            <property name="successfulRecords" type="number" required="true"/>
+            <property name="failedRecords" type="number" required="true"/>
+            <property name="errors" type="array" required="false">
+                <items type="ProcessingError"/>
+            </property>
+            <property name="processingTime" type="number" required="true"/>
+            <!-- VIOLATION: No file integrity validation -->
+        </object>
+    </type>
+
+    <type name="ProcessingError">
+        <annotation>
+            <description>Individual processing error</description>
+        </annotation>
+        <object>
+            <property name="recordNumber" type="number" required="true"/>
+            <property name="errorType" type="string" required="true"/>
+            <property name="errorMessage" type="string" required="true"/>
+            <property name="fieldName" type="string" required="false"/>
+            <!-- VIOLATION: Raw data in error messages -->
+            <property name="rawData" type="string" required="false"/>
+        </object>
+    </type>
+
+    <!-- VIOLATION: Missing input validation types -->
+    <!-- VIOLATION: No type versioning strategy -->
+    <!-- VIOLATION: Missing documentation links -->
+    
+</application-types> 
