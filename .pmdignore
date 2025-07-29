@@ -1,0 +1,40 @@
+# PMD Ignore File
+# Exclude specific projects
+legacy-project/
+deprecated-app/
+temp-workspace/
+
+# Exclude specific file patterns
+**/target/**
+**/node_modules/**
+**/.metadata/**
+**/.settings/**
+
+# Exclude test files
+**/src/test/**
+**/*-test.xml
+**/test-*.xml
+
+# Exclude generated files
+**/generated/**
+**/auto-generated/**
+
+# Exclude configuration files
+**/pom.xml
+**/.project
+**/.classpath
+**/mule-project.xml
+
+# Exclude specific directories
+**/logs/**
+**/tmp/**
+**/.temp/**
+
+# Exclude by file extension
+*.log
+*.tmp
+*.bak
+
+# Exclude specific named files
+application.properties
+global.xml 
