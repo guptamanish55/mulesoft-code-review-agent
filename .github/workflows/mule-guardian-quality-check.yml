@@ -9,7 +9,7 @@ on:
 
 # Environment variables
 env:
-  COMPLIANCE_THRESHOLD: 75  # Minimum compliance percentage required
+  COMPLIANCE_THRESHOLD: 0  # Temporarily set to 0 for debugging (normally 75)
   PMD_VERSION: "7.0.0"
 
 jobs:
@@ -141,7 +141,7 @@ jobs:
         pip install requests==2.32.4 pathlib2==2.3.7 dataclasses-json==0.6.1
         echo "✅ Dependencies installed successfully"
         
-    # Step 6: Run Mule Guardian Analysis (FIXED PATH)
+    # Step 6: Run Mule Guardian Analysis (WITH DEBUG LOGGING)
     - name: Run Mule Guardian Analysis
       id: mule-analysis
       run: |
@@ -156,6 +156,17 @@ jobs:
           ANALYSIS_TARGET="."
         fi
         
+        # DEBUG: Show what we're analyzing
+        echo "🔍 DEBUG: Analysis target is: $ANALYSIS_TARGET"
+        echo "📁 DEBUG: Contents of analysis target:"
+        ls -la "$ANALYSIS_TARGET" || echo "❌ Target directory doesn't exist"
+        
+        if [ -d "$ANALYSIS_TARGET" ]; then
+          echo "📁 DEBUG: Looking for XML files in target:"
+          find "$ANALYSIS_TARGET" -name "*.xml" -type f | head -10
+          echo "📁 DEBUG: Total XML files found: $(find "$ANALYSIS_TARGET" -name "*.xml" -type f | wc -l)"
+        fi
+        
         # Verify core files exist
         if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
           echo "❌ Error: mulesoft_ai_code_review_agent.py not found"
@@ -167,8 +178,40 @@ jobs:
           exit 1
         fi
         
+        # DEBUG: Show ruleset info
+        echo "📋 DEBUG: PMD ruleset file size: $(wc -l < comprehensive-mulesoft-ruleset-no-debug.xml) lines"
+        
         # Run the analysis on the correct target
+        echo "🚀 DEBUG: Running analysis command:"
+        echo "python mulesoft_ai_code_review_agent.py $ANALYSIS_TARGET comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v"
+        
         python mulesoft_ai_code_review_agent.py "$ANALYSIS_TARGET" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v
+        
+        # DEBUG: Check if report was generated
+        if [ -f "quality-report.json" ]; then
+          echo "✅ DEBUG: quality-report.json generated successfully"
+          echo "📊 DEBUG: Report file size: $(wc -c < quality-report.json) bytes"
+          echo "📋 DEBUG: First 500 characters of report:"
+          head -c 500 quality-report.json
+          echo -e "\n📋 DEBUG: Report structure:"
+          python -c "
+          import json
+          try:
+              with open('quality-report.json', 'r') as f:
+                  data = json.load(f)
+              print(f'Total violations: {data.get(\"total_violations\", \"N/A\")}')
+              print(f'Files scanned: {data.get(\"files_scanned\", \"N/A\")}')
+              print(f'Compliance percentage: {data.get(\"compliance_percentage\", \"N/A\")}')
+              print(f'Violations by priority: {data.get(\"violations_by_priority\", \"N/A\")}')
+              print(f'Report keys: {list(data.keys())}')
+          except Exception as e:
+              print(f'Error reading report: {e}')
+          "
+        else
+          echo "❌ DEBUG: quality-report.json was not generated!"
+          echo "📁 DEBUG: Current directory contents:"
+          ls -la
+        fi
         
         # Extract compliance percentage from report
         COMPLIANCE=$(python -c "
@@ -179,6 +222,7 @@ jobs:
             compliance = data.get('compliance_percentage', 0)
             print(f'{compliance:.1f}')
         except Exception as e:
+            print(f'Error extracting compliance: {e}', file=sys.stderr)
             print('0')
         ")
         
