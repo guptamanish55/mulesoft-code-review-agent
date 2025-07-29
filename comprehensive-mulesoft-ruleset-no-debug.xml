@@ -1,0 +1,396 @@
+<?xml version="1.0"?>
+<ruleset name="Comprehensive Mule Guardian Code Review Ruleset - No Debug Logging"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="http://pmd.sourceforge.net/ruleset_2_0_0.xsd">
+
+    <description>Enhanced comprehensive ruleset for Mule Guardian code review - Excludes debug logger validation rules</description>
+
+    <!-- =================== EXCLUDE PATTERNS =================== -->
+    
+    <!-- Exclude application-types.xml from validation -->
+    <exclude-pattern>application-types.xml</exclude-pattern>
+
+    <!-- =================== SECURITY RULES =================== -->
+
+    <rule name="DisallowPlaintextSensitiveAttributes"
+          message="Sensitive values must use secure property placeholders (e.g., ${secure::...})"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Detects hardcoded sensitive values like username, password, clientId, and clientSecret not using secure property placeholders.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>
+                    //*[@username and not(starts-with(@username, '${secure::')) and not(starts-with(@username, '${'))]
+                    | //*[@password and not(starts-with(@password, '${secure::')) and not(starts-with(@password, '${'))]
+                    | //*[@clientId and not(starts-with(@clientId, '${secure::')) and not(starts-with(@clientId, '${'))]
+                    | //*[@clientSecret and not(starts-with(@clientSecret, '${secure::')) and not(starts-with(@clientSecret, '${'))]
+                    | //*[@secret and not(starts-with(@secret, '${secure::')) and not(starts-with(@secret, '${'))]
+                </value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="EnforceTLSInHttpConnections"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule"
+          message="HTTPS communication must be used - replace http:// with https://">
+        <description>Ensure HTTP request and listener connections use HTTPS (TLS 1.2+).</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>
+                    //*[local-name() = 'request' and @url and contains(@url, 'http://') and not(contains(@url, 'https://'))]
+                    | //*[local-name() = 'listener' and @config-ref and contains(@config-ref, 'http') and not(contains(@config-ref, 'https'))]
+                    | //*[local-name() = 'listener-connection' and @protocol and contains(@protocol, 'http') and not(contains(@protocol, 'https'))]
+                    | //*[local-name() = 'request-connection' and @protocol and contains(@protocol, 'http') and not(contains(@protocol, 'https'))]
+                </value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="DisallowInsecureTLS"
+          message="Do not use insecure=true for TLS communication - this disables certificate validation"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Flags any configuration that sets insecure="true" in TLS communication, which disables certificate validation.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[@insecure='true']</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="AvoidSQLInjection"
+          message="Use parameterized queries to prevent SQL injection attacks - avoid string concatenation in SQL"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Detects potential SQL injection vulnerabilities by checking for concatenated queries.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[(local-name()='select' or local-name()='insert' or local-name()='update' or local-name()='delete') and namespace-uri()='http://www.mulesoft.org/schema/mule/db' and contains(string(.), '#[') and contains(string(.), '++')]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- =================== PROJECT STRUCTURE RULES =================== -->
+
+    <rule name="ProjectPomMustHaveParent"
+          message="The project POM must contain a parent element for proper Maven inheritance"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Checks if the root project element in a POM file has a child parent element.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>/project[not(parent)]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="EnvironmentSpecificPropertyFiles"
+          message="Property files should be environment-specific (e.g., config-dev.yaml, config-prod.yaml)"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Avoid using general-purpose property files without environment-specific overrides.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>
+                    //*[@file and contains(@file, 'application.properties') and not(contains(@file, '-dev.properties') or contains(@file, '-prod.properties') or contains(@file, '-test.properties') or contains(@file, '-qa.properties'))]
+                    | //*[@file and contains(@file, 'config.yaml') and not(contains(@file, '-dev.yaml') or contains(@file, '-prod.yaml') or contains(@file, '-test.yaml') or contains(@file, '-qa.yaml'))]
+                </value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="ProjectNameMatchesGitRepo"
+          message="Project name should follow kebab-case naming convention (e.g., my-mulesoft-api)"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures the name field in pom.xml matches naming conventions.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//project/name[not(matches(string(.), '^[a-z]+(-[a-z0-9]+)*$'))]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="GroupIdMatchesBusinessGroupId"
+          message="groupId must follow organizational standards (e.g., com.company.project)"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>This rule checks that the groupId follows organizational standards.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>/project/groupId[not(matches(string(.), '^[a-z]+\.[a-z]+(\.[a-z0-9]+)*$'))]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="AllDependenciesAreMavenized"
+          message="All dependencies should be managed via Maven - avoid manual JARs or non-mavenized libraries"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>This rule checks that all dependencies are defined with groupId, artifactId, and version.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//dependencies/dependency[not(groupId and artifactId and version)]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- =================== NAMING CONVENTION RULES =================== -->
+
+    <rule name="FlowNameHyphenatedLowerCase"
+          language="xml"
+          message="Flow names must be lowercase and hyphen-separated (e.g., process-customer-data)"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures flow names adhere to lowercase-hyphenated pattern.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='flow' and @name and not(matches(@name, '^[a-z]+(-[a-z0-9]+)*$'))]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="FlowVariableNamingConvention"
+          language="xml"
+          message="Flow variable names must be lower camel case and start with 'var' prefix (e.g., varCustomerId)"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Enforces flow variables to start with 'var' followed by UpperCamelCase naming.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='set-variable' and @variableName and not(matches(@variableName, '^var[A-Z][a-zA-Z0-9]*$'))]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="PropertiesFileNameConvention"
+          language="xml"
+          message="Properties file names must follow pattern: config-env.yaml (e.g., config-dev.yaml)"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures properties files follow environment-specific naming conventions.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[@file and contains(@file, 'config') and not(matches(@file, 'config-(dev|prod|test|qa|stage|uat)\\.(yaml|yml|properties)$'))]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="ApiSpecificationNaming"
+          language="xml"
+          message="API specification files must follow naming convention: api-name-version.raml (e.g., customer-api-v1.raml)"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures API specification files follow proper naming conventions.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[@file and contains(@file, '.raml') and not(matches(@file, '^[a-z]+(-[a-z0-9]+)*-v[0-9]+(\.[0-9]+)*\\.raml$'))]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- =================== ERROR HANDLING RULES =================== -->
+
+    <rule name="TryScopeNotEmpty"
+          language="xml"
+          message="Try scope should not be empty - add actual processing logic"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures try blocks contain actual processing logic.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='try' and count(*) = 0]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="ErrorHandlerExists"
+          language="xml"
+          message="Error handlers should be defined for critical operations"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures error handling is properly implemented. Excludes flows that reference global error handlers or have global error handler configurations.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='flow' and not(*[local-name()='error-handler']) and not(*[local-name()='error-handler'][@ref]) and not(*[local-name()='error-handler'][@ref='global-error-handler']) and not(*[local-name()='try']) and not(*[local-name()='catch-exception-strategy']) and not(*[local-name()='exception-strategy']) and not(*[local-name()='exception-strategy'][@ref]) and not(*[local-name()='on-error-continue']) and not(*[local-name()='on-error-propagate']) and not(ancestor::*[local-name()='mule']//*[local-name()='error-handler' and @name='global-error-handler'])]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="ProperExceptionHandling"
+          language="xml"
+          message="Use specific exception types instead of generic Exception"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Encourages specific exception handling for better error management.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='catch-exception-strategy' and @type='java.lang.Exception']</value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- =================== PERFORMANCE RULES =================== -->
+
+    <rule name="AvoidLargePayloadsInMemory"
+          language="xml"
+          message="Large payloads should be streamed, not loaded entirely into memory"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Encourages streaming for large payloads to improve memory usage.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='set-payload' and contains(@value, 'payload') and not(contains(@value, 'stream'))]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="UseConnectionPooling"
+          language="xml"
+          message="Database connections should use connection pooling for better performance"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures database connections use pooling for better performance.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='db:config' and not(@connectionPoolingSize)]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- =================== ADDED MISSING RULES =================== -->
+
+    <rule name="AvoidNestedLoops"
+          message="Avoid nested loops as they can cause performance issues - consider using DataWeave transformations"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Detects nested foreach loops that can impact performance.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='foreach']//*[local-name()='foreach']</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="AvoidDuplicateProcessing"
+          message="Duplicate processing should be avoided - use caching or deduplication mechanisms"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Flags potential duplicate processing scenarios that should be optimized.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='flow' and count(.//*[local-name()='request' and @url]) > 1]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="RequireAutoDiscovery"
+          message="AutoDiscovery should be configured for proper API management"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures AutoDiscovery is properly configured for API management. Checks for both standard autodiscovery and API Gateway autodiscovery configurations. Only flags configuration files without flows/sub-flows that should contain autodiscovery. Intelligently excludes MUnit test files. Note: application-types.xml files are excluded at the ruleset level.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='mule' and not(.//*[local-name()='autodiscovery']) and not(.//*[contains(local-name(), 'autodiscovery')]) and not(.//*[local-name()='flow']) and not(.//*[local-name()='sub-flow']) and not(.//*[namespace-uri()='http://www.mulesoft.org/schema/mule/munit'])]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="RequireCommonLibraries"
+          message="Reference common libraries (datatypes, errors, etc) for consistency"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures common libraries are referenced for consistency across APIs.</description>
+        <priority>2</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='raml' and not(.//*[local-name()='uses'])]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="RequireSecurityMechanisms"
+          message="Resources (Endpoints) should be supporting agreed security mechanisms"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures endpoints have proper security mechanisms configured.</description>
+        <priority>1</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='listener' and not(.//*[local-name()='security'])]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="PropertiesCamelCaseValidation"
+          message="Properties/fields were defined using camelCase"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures properties and fields follow camelCase naming convention.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[@*[matches(., '[A-Z][A-Z]') and not(matches(., '^[a-z][a-zA-Z0-9]*$'))]]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <rule name="AvoidUnusedVariables"
+          message="Ensure no unused variables, sub-flows exist"
+          language="xml"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Flags potentially unused variables and sub-flows that should be cleaned up.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='set-variable' and @variableName and not(following::*[contains(@value, concat('#[vars.', @variableName, ']'))])]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- =================== CODE QUALITY RULES =================== -->
+
+    <rule name="AvoidEmptyFlows"
+          language="xml"
+          message="Flows should not be empty - add processing logic or remove unused flows"
+          class="net.sourceforge.pmd.lang.xml.rule.DomXPathRule">
+        <description>Ensures flows contain actual processing logic.</description>
+        <priority>3</priority>
+        <properties>
+            <property name="xpath">
+                <value>//*[local-name()='flow' and count(*) = 0]</value>
+            </property>
+        </properties>
+    </rule>
+
+    <!-- =================== EXCLUDED RULES (Debug Logging) =================== -->
+    
+    <!-- 
+    The following debug logging rules have been EXCLUDED from this ruleset:
+    
+    - AvoidLoggingPayload: Checks for logging payload using loggers
+    - AvoidSensitiveDataInLogs: Checks for sensitive data in logs
+    - LoggerVerbosityLevelForPayload: Checks payload logging levels
+    - AvoidDebugInfoInProduction: Checks debug/info level logs
+    - CorrelationIdLogging: Checks for correlation ID in logs
+    - TransactionStateLogging: Checks transaction state logging
+    - AvoidJsonLoggerForJava17: Checks for JsonLogger usage
+    
+    These rules are excluded to avoid debug logger validation as requested.
+    -->
+
+</ruleset> 
