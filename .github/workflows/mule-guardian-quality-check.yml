@@ -200,15 +200,48 @@ jobs:
           ls -la
         fi
         
-        # Extract compliance percentage from report (SIMPLE & RELIABLE)
-        echo "📊 DEBUG: Analysis completed successfully with 31 violations found"
-        echo "📊 DEBUG: Breakdown - HIGH: 2, MEDIUM: 1, LOW: 28 violations"
-        echo "📊 DEBUG: Calculating compliance score..."
+        # Extract compliance percentage from report (DYNAMIC CALCULATION)
+        echo "📊 DEBUG: Analysis completed successfully"
+        echo "📊 DEBUG: Extracting compliance score from report..."
         
-        # For demo: 100 - (2*3 + 1*2 + 28*1) = 100 - 36 = 64%
-        COMPLIANCE="64.0"
-        
-        echo "📊 DEBUG: Compliance calculated: $COMPLIANCE%"
+        # Calculate compliance dynamically from JSON report
+        if [ -f "quality-report.json" ]; then
+          # Try to extract compliance_percentage from JSON first
+          COMPLIANCE=$(grep -o '"compliance_percentage":[0-9.]*' quality-report.json | cut -d':' -f2 | head -1)
+          
+          # If not found, calculate manually from violation counts
+          if [ -z "$COMPLIANCE" ] || [ "$COMPLIANCE" = "0" ]; then
+            echo "📊 DEBUG: Calculating compliance from violation counts..."
+            
+            # Extract violation counts using grep
+            HIGH_COUNT=$(grep -o '"HIGH":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+            MEDIUM_COUNT=$(grep -o '"MEDIUM":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+            LOW_COUNT=$(grep -o '"LOW":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+            
+            # Default to 0 if not found
+            HIGH_COUNT=${HIGH_COUNT:-0}
+            MEDIUM_COUNT=${MEDIUM_COUNT:-0}
+            LOW_COUNT=${LOW_COUNT:-0}
+            
+            echo "📊 DEBUG: HIGH: $HIGH_COUNT, MEDIUM: $MEDIUM_COUNT, LOW: $LOW_COUNT"
+            
+            # Calculate deduction: HIGH*3 + MEDIUM*2 + LOW*1
+            DEDUCTION=$((HIGH_COUNT*3 + MEDIUM_COUNT*2 + LOW_COUNT*1))
+            COMPLIANCE=$((100 - DEDUCTION))
+            
+            # Ensure minimum compliance of 20%
+            if [ $COMPLIANCE -lt 20 ]; then
+              COMPLIANCE=20
+            fi
+            
+            echo "📊 DEBUG: Calculated compliance: $COMPLIANCE% (deduction: $DEDUCTION points)"
+          else
+            echo "📊 DEBUG: Found compliance_percentage in report: $COMPLIANCE%"
+          fi
+        else
+          echo "❌ DEBUG: quality-report.json not found, using default"
+          COMPLIANCE="50"
+        fi
         
         echo "COMPLIANCE_SCORE=$COMPLIANCE" >> $GITHUB_OUTPUT
         echo "🛡️ Project Compliance: $COMPLIANCE%"
@@ -239,36 +272,116 @@ jobs:
           echo "Project meets quality standards!"
         fi
         
-    # Step 8: Report Summary (JSON report already generated successfully)
-    - name: Report Summary
+    # Step 8: Generate Reports (JSON + HTML)
+    - name: Generate Reports
       if: always()
       run: |
-        echo "📄 Analysis completed successfully!"
-        echo "📊 JSON report generated with all violation details"
-        echo "✅ Ready for quality gate check and artifact upload"
+        echo "📄 JSON report already generated successfully"
+        echo "📄 Creating dynamic HTML report..."
         
-    # Step 9: Upload Reports as Artifacts (FIXED VERSION)
+        # Extract values for HTML report
+        COMPLIANCE_SCORE="${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}"
+        
+        if [ -f "quality-report.json" ]; then
+          TOTAL_VIOLATIONS=$(grep -o '"total_violations":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          FILES_SCANNED=$(grep -o '"files_scanned":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          HIGH_COUNT=$(grep -o '"HIGH":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          MEDIUM_COUNT=$(grep -o '"MEDIUM":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          LOW_COUNT=$(grep -o '"LOW":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+        else
+          TOTAL_VIOLATIONS="0"
+          FILES_SCANNED="0"
+          HIGH_COUNT="0"
+          MEDIUM_COUNT="0"
+          LOW_COUNT="0"
+        fi
+        
+        # Default values if extraction failed
+        TOTAL_VIOLATIONS=${TOTAL_VIOLATIONS:-0}
+        FILES_SCANNED=${FILES_SCANNED:-0}
+        HIGH_COUNT=${HIGH_COUNT:-0}
+        MEDIUM_COUNT=${MEDIUM_COUNT:-0}
+        LOW_COUNT=${LOW_COUNT:-0}
+        COMPLIANCE_SCORE=${COMPLIANCE_SCORE:-0}
+        
+        echo "📊 Generating HTML with: Compliance=$COMPLIANCE_SCORE%, Violations=$TOTAL_VIOLATIONS, Files=$FILES_SCANNED"
+        
+        # Pre-calculate status for HTML
+        if [ $COMPLIANCE_SCORE -ge 75 ]; then
+          STATUS_TEXT="Quality Gate Passed"
+          STATUS_COLOR="#d4edda"
+        else
+          STATUS_TEXT="Quality Gate Failed"
+          STATUS_COLOR="#f8d7da"
+        fi
+        
+        # Generate simple HTML report using basic echo statements
+        echo "<!DOCTYPE html>" > quality-report.html
+        echo "<html><head><title>Mule Guardian Quality Report</title>" >> quality-report.html
+        echo "<style>body{font-family:Arial;margin:40px;background:#f5f7fa}.header{background:#667eea;color:white;padding:20px;border-radius:8px;margin-bottom:20px}.metric{display:inline-block;background:white;margin:10px;padding:15px;border-radius:6px;min-width:100px;text-align:center}.violation{display:inline-block;margin:10px;padding:15px;border-radius:6px;text-align:center}.high{background:#fee;color:#dc3545}.medium{background:#fff8e1;color:#856404}.low{background:#e8f5e8;color:#155724}</style>" >> quality-report.html
+        echo "</head><body>" >> quality-report.html
+        echo "<div class='header'><h1>🛡️ Mule Guardian Quality Report</h1><p>Code Quality Analysis Results</p></div>" >> quality-report.html
+        echo "<div class='metric'><h2>${COMPLIANCE_SCORE}%</h2><p>Compliance Score</p><small style='background:${STATUS_COLOR};padding:5px;border-radius:4px'>${STATUS_TEXT}</small></div>" >> quality-report.html
+        echo "<div class='metric'><h2>${TOTAL_VIOLATIONS}</h2><p>Total Violations</p></div>" >> quality-report.html
+        echo "<div class='metric'><h2>${FILES_SCANNED}</h2><p>Files Scanned</p></div>" >> quality-report.html
+        echo "<h2>Violation Breakdown</h2>" >> quality-report.html
+        echo "<div class='violation high'><h2>${HIGH_COUNT}</h2><p>High Priority</p></div>" >> quality-report.html
+        echo "<div class='violation medium'><h2>${MEDIUM_COUNT}</h2><p>Medium Priority</p></div>" >> quality-report.html
+        echo "<div class='violation low'><h2>${LOW_COUNT}</h2><p>Low Priority</p></div>" >> quality-report.html
+        echo "<h2>Key Recommendations</h2><ul><li>Address security violations</li><li>Implement error handling</li><li>Add input validation</li><li>Use parameterized queries</li></ul>" >> quality-report.html
+        echo "<p><strong>Download the JSON report for detailed analysis</strong></p>" >> quality-report.html
+        echo "</body></html>" >> quality-report.html
+        
+        echo "✅ Dynamic HTML report generated successfully"
+        echo "📊 Report includes: $TOTAL_VIOLATIONS violations, $COMPLIANCE_SCORE% compliance"
+        
+    # Step 9: Upload Reports as Artifacts (JSON + HTML)
     - name: Upload Quality Reports
       if: always()  # Always upload, even if analysis failed
       uses: actions/upload-artifact@v4
       with:
         name: mule-guardian-quality-report
-        path: quality-report.json
+        path: |
+          quality-report.json
+          quality-report.html
         retention-days: 30
         
-    # Step 10: Workflow Summary
+    # Step 10: Workflow Summary (Dynamic)
     - name: Workflow Summary
       if: always()
       run: |
+        COMPLIANCE_SCORE="${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}"
+        THRESHOLD="${{ env.COMPLIANCE_THRESHOLD }}"
+        
+        # Extract dynamic values from JSON report
+        if [ -f "quality-report.json" ]; then
+          TOTAL_VIOLATIONS=$(grep -o '"total_violations":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          HIGH_COUNT=$(grep -o '"HIGH":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          MEDIUM_COUNT=$(grep -o '"MEDIUM":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          LOW_COUNT=$(grep -o '"LOW":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+        else  
+          TOTAL_VIOLATIONS=0
+          HIGH_COUNT=0
+          MEDIUM_COUNT=0
+          LOW_COUNT=0
+        fi
+        
+        # Determine gate status
+        if [ $COMPLIANCE_SCORE -ge $THRESHOLD ]; then
+          GATE_STATUS="PASSED ($COMPLIANCE_SCORE% >= $THRESHOLD%)"
+        else
+          GATE_STATUS="FAILED ($COMPLIANCE_SCORE% < $THRESHOLD%)"
+        fi
+        
         echo "🎉 MULE GUARDIAN ANALYSIS COMPLETED!"
         echo "📊 Analysis Results:"
-        echo "   - Total Violations: 31"
-        echo "   - HIGH Priority: 2"
-        echo "   - MEDIUM Priority: 1" 
-        echo "   - LOW Priority: 28"
-        echo "   - Compliance Score: 64.0%"
-        echo "   - Quality Gate Status: FAILED (64% < 75%)"
+        echo "   - Total Violations: ${TOTAL_VIOLATIONS:-0}"
+        echo "   - HIGH Priority: ${HIGH_COUNT:-0}"
+        echo "   - MEDIUM Priority: ${MEDIUM_COUNT:-0}"
+        echo "   - LOW Priority: ${LOW_COUNT:-0}"
+        echo "   - Compliance Score: ${COMPLIANCE_SCORE}%"
+        echo "   - Quality Gate Status: $GATE_STATUS"
         echo ""
-        echo "✅ JSON Report Generated Successfully"
-        echo "📁 Report uploaded as artifact: mule-guardian-quality-report"
+        echo "✅ JSON + HTML Reports Generated Successfully"
+        echo "📁 Reports uploaded as artifact: mule-guardian-quality-report"
         echo "🔍 Download from Actions tab for detailed analysis" 
