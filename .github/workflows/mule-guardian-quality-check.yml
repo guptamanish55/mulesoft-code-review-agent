@@ -318,8 +318,27 @@ jobs:
           echo "This might not be a MuleSoft project or files are in a different location."
         fi
         
-        # Run the analysis
-        python mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v
+        # Run the analysis and capture output
+        echo "🔍 Starting Mule Guardian analysis..."
+        python mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
+        
+        # Check what type of analysis was actually used
+        echo ""
+        echo "🧪 ANALYSIS METHOD VERIFICATION:"
+        if grep -q "SUCCESS: Using FULL PMD analysis" analysis_output.log 2>/dev/null; then
+          echo "✅ CONFIRMED: Full PMD analysis with comprehensive ruleset was used"
+          echo "📊 This provides the most accurate compliance score"
+        elif grep -q "ALTERNATIVE analysis" analysis_output.log 2>/dev/null; then
+          echo "🚨 WARNING: Alternative analysis was used instead of PMD!"
+          echo "🚨 This results in HIGHER compliance scores than the UI"
+          echo "🚨 The UI (28% compliance) is more accurate than this result"
+          echo "🚨 PMD failed to run properly - check the logs above for Java classpath errors"
+        else
+          echo "⚠️ Could not determine which analysis method was used"
+          echo "📋 Last few lines of analysis output:"
+          tail -10 analysis_output.log || echo "No output log found"
+        fi
+        echo ""
         
         # Extract results from JSON report
         if [ -f "quality-report.json" ]; then
@@ -368,6 +387,16 @@ jobs:
         echo "   - Compliance Score: $SCORE%"
         echo "   - Required Threshold: $THRESHOLD%"
         echo "   - Skip Quality Gate: $SKIP_GATE"
+        
+        # Check if alternative analysis was used and warn
+        if grep -q "ALTERNATIVE analysis" analysis_output.log 2>/dev/null; then
+          echo ""
+          echo "🚨 CRITICAL WARNING: Alternative analysis was used!"
+          echo "🚨 This score ($SCORE%) may be MISLEADINGLY HIGH"
+          echo "🚨 The UI compliance score (28%) is likely more accurate"
+          echo "🚨 PMD analysis failed - please fix PMD installation issues"
+          echo ""
+        fi
         
         if [ "$SKIP_GATE" = "true" ]; then
           echo "⚠️ Quality gate check skipped"
