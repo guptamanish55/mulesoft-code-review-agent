@@ -340,7 +340,9 @@ class MuleSoftCodeReviewAgent:
             
             # Check for specific Java classpath errors
             if "Could not find or load main class" in result.stderr:
-                logger.warning("PMD Java classpath issue detected, trying alternative PMD path and approach")
+                logger.error("🚨 PMD Java classpath issue detected!")
+                logger.error(f"🚨 PMD Error: {result.stderr}")
+                logger.info("🔄 Trying alternative PMD path...")
                 
                 # Try the other PMD executable if available
                 alternative_paths = [p for p in pmd_paths if p != pmd_executable and os.path.exists(p)]
@@ -352,13 +354,16 @@ class MuleSoftCodeReviewAgent:
                     try:
                         alt_result = subprocess.run(alt_cmd, capture_output=True, text=True, timeout=300)
                         if alt_result.returncode in [0, 4] and alt_result.stdout.strip():
-                            logger.info("✅ Alternative PMD executable worked")
+                            logger.info("✅ Alternative PMD executable worked - using FULL PMD analysis")
                             return alt_result.stdout, duration
+                        else:
+                            logger.error(f"Alternative PMD also failed: returncode={alt_result.returncode}, stderr={alt_result.stderr}")
                     except Exception as e:
-                        logger.warning(f"Alternative PMD executable also failed: {e}")
+                        logger.error(f"Alternative PMD executable also failed: {e}")
                 
                 # If both PMD executables fail, fall back to alternative analysis
-                logger.warning("Both PMD executables failed, using alternative analysis")
+                logger.error("🚨 CRITICAL: All PMD executables failed!")
+                logger.error("🚨 Falling back to LIMITED alternative analysis - this will show HIGHER compliance scores!")
                 return self._run_alternative_analysis(), duration
             
             if result.returncode != 0 and result.returncode != 4:  # PMD returns 4 for violations
@@ -374,9 +379,12 @@ class MuleSoftCodeReviewAgent:
             
             # If no output, try alternative approach
             if not result.stdout.strip():
-                logger.warning("PMD returned no output, trying alternative analysis")
+                logger.error("🚨 PMD returned no output - this indicates PMD failed silently!")
+                logger.error("🚨 Falling back to LIMITED alternative analysis - this will show HIGHER compliance scores!")
                 return self._run_alternative_analysis(), duration
             
+            logger.info("✅ SUCCESS: Using FULL PMD analysis with comprehensive ruleset")
+            logger.info(f"✅ PMD analysis completed successfully - using comprehensive rules")
             return result.stdout, duration
             
         except subprocess.TimeoutExpired:
@@ -458,6 +466,9 @@ class MuleSoftCodeReviewAgent:
     
     def _run_alternative_analysis(self) -> str:
         """Run alternative analysis when PMD doesn't work"""
+        logger.warning("🚨 IMPORTANT: Running ALTERNATIVE analysis instead of PMD!")
+        logger.warning("🚨 This will result in FEWER violations and HIGHER compliance scores!")
+        logger.warning("🚨 Alternative analysis only checks for basic issues like plaintext passwords, HTTP connections, etc.")
         logger.info("Running alternative analysis for MuleSoft files")
         
         violations = []
