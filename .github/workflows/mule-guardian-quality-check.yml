@@ -217,19 +217,17 @@ jobs:
         
         # Create a PMD wrapper script with proper Java environment
         echo "🔗 Creating PMD wrapper with Java environment..."
-        sudo tee /opt/pmd/bin/pmd-wrapper > /dev/null <<EOF
-#!/bin/bash
-# PMD Wrapper Script with Java Environment Setup
-
-# Ensure Java environment is set
-if [ -z "\$JAVA_HOME" ]; then
-    export JAVA_HOME=\$(readlink -f /usr/bin/java | sed "s:bin/java::")
-fi
-export PATH="\$JAVA_HOME/bin:\$PATH"
-
-# Execute PMD with proper environment
-exec /opt/pmd/bin/pmd "\$@"
-EOF
+        echo '#!/bin/bash' | sudo tee /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo '# PMD Wrapper Script with Java Environment Setup' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo '' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo '# Ensure Java environment is set' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo 'if [ -z "$JAVA_HOME" ]; then' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo '    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo 'fi' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo 'export PATH="$JAVA_HOME/bin:$PATH"' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo '' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo '# Execute PMD with proper environment' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        echo 'exec /opt/pmd/bin/pmd "$@"' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
         
         sudo chmod +x /opt/pmd/bin/pmd-wrapper
         
