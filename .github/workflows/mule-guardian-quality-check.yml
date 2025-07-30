@@ -30,6 +30,11 @@ on:
         required: false
         type: boolean
         default: false
+      require_pmd:
+        description: 'Fail workflow if PMD analysis fails (prevents misleading high scores from alternative analysis)'
+        required: false
+        type: boolean
+        default: true
     outputs:
       # Outputs that calling workflows can use
       compliance_score:
@@ -108,148 +113,53 @@ jobs:
         PMD_VERSION="${{ inputs.pmd_version }}"
         FALLBACK_VERSION="6.55.0"
         
-        # Try downloading PMD with multiple methods
-        SUCCESS=false
+        # Force install essential tools
+        sudo apt-get update -qq
+        sudo apt-get install -y wget unzip bc
         
-        # Method 1: Try requested version
-        echo "🔄 Trying PMD $PMD_VERSION..."
-        if wget --timeout=30 --tries=2 "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${PMD_VERSION}/pmd-bin-${PMD_VERSION}.zip" 2>/dev/null; then
-          echo "✅ Downloaded PMD $PMD_VERSION successfully"
-          unzip "pmd-bin-${PMD_VERSION}.zip"
-          sudo mv "pmd-bin-${PMD_VERSION}" /opt/pmd
-          SUCCESS=true
-        fi
+        # Use a known working PMD version and simplified installation
+        echo "🔄 Installing PMD 6.55.0 (known working version)..."
         
-        # Method 2: Try fallback stable version if requested version failed
-        if [ "$SUCCESS" = "false" ] && [ "$PMD_VERSION" != "$FALLBACK_VERSION" ]; then
-          echo "🔄 Trying fallback PMD $FALLBACK_VERSION..."
-          if wget --timeout=30 --tries=2 "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${FALLBACK_VERSION}/pmd-bin-${FALLBACK_VERSION}.zip" 2>/dev/null; then
-            echo "✅ Downloaded PMD $FALLBACK_VERSION as fallback"
-            unzip "pmd-bin-${FALLBACK_VERSION}.zip"
-            sudo mv "pmd-bin-${FALLBACK_VERSION}" /opt/pmd
-            SUCCESS=true
-          fi
-        fi
+        # Download known working PMD version
+        wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F6.55.0/pmd-bin-6.55.0.zip"
+        unzip pmd-bin-6.55.0.zip
         
-        # Method 3: Try alternative URL pattern (for older versions)
-        if [ "$SUCCESS" = "false" ]; then
-          echo "🔄 Trying alternative URL format..."
-          if wget --timeout=30 --tries=2 "https://github.com/pmd/pmd/releases/download/pmd_releases/${PMD_VERSION}/pmd-dist-${PMD_VERSION}-bin.zip" 2>/dev/null; then
-            echo "✅ Downloaded PMD $PMD_VERSION with alternative URL"
-            unzip "pmd-dist-${PMD_VERSION}-bin.zip"
-            sudo mv "pmd-bin-${PMD_VERSION}" /opt/pmd 2>/dev/null || sudo mv "pmd-dist-${PMD_VERSION}" /opt/pmd
-            SUCCESS=true
-          fi
-        fi
+        # Install to standard location
+        sudo mv pmd-bin-6.55.0 /opt/pmd
+        sudo chmod +x /opt/pmd/bin/pmd
         
-        # Method 4: Use package manager as last resort
-        if [ "$SUCCESS" = "false" ]; then
-          echo "⚠️ Direct downloads failed, using Ubuntu package manager..."
-          sudo apt-get update -qq
-          sudo apt-get install -y pmd 2>/dev/null || true
-          
-          # Check if pmd command is available
-          if command -v pmd >/dev/null 2>&1; then
-            echo "✅ PMD installed via package manager"
-            # Create directory structure expected by Mule Guardian
-            sudo mkdir -p /opt/pmd/bin
-            sudo ln -sf $(which pmd) /opt/pmd/bin/pmd
-            SUCCESS=true
-          else
-            echo "❌ Package manager installation also failed"
-            echo "🔄 Installing PMD manually with enhanced Java setup..."
-            
-            # Manual installation with proper Java configuration
-            sudo mkdir -p /opt/pmd/bin
-            
-            # Ensure Java is properly configured
-            echo "☕ Verifying Java installation..."
-            java -version
-            export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-            
-            # Try to download a working version with better extraction
-            if wget --timeout=30 "https://repo1.maven.org/maven2/net/sourceforge/pmd/pmd-dist/6.55.0/pmd-dist-6.55.0-bin.zip" 2>/dev/null; then
-              unzip -q pmd-dist-6.55.0-bin.zip
-              sudo mv pmd-bin-6.55.0 /opt/pmd_temp
-              sudo cp -r /opt/pmd_temp/* /opt/pmd/
-              sudo rm -rf /opt/pmd_temp
-              
-              # Make sure the PMD script is executable and has proper Java path
-              sudo chmod +x /opt/pmd/bin/pmd
-              
-              # Create a wrapper script that ensures proper Java execution
-              echo "#!/bin/bash" | sudo tee /opt/pmd/bin/pmd_wrapper > /dev/null
-              echo "export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" | sudo tee -a /opt/pmd/bin/pmd_wrapper > /dev/null
-              echo "export PATH=\$JAVA_HOME/bin:\$PATH" | sudo tee -a /opt/pmd/bin/pmd_wrapper > /dev/null
-              echo "exec /opt/pmd/bin/pmd \"\$@\"" | sudo tee -a /opt/pmd/bin/pmd_wrapper > /dev/null
-              sudo chmod +x /opt/pmd/bin/pmd_wrapper
-              sudo ln -sf /opt/pmd/bin/pmd_wrapper /opt/homebrew/bin/pmd
-              
-              SUCCESS=true
-            else
-              echo "❌ All PMD installation methods failed"
-              exit 1
-            fi
-          fi
+        # Verify Java setup
+        echo "☕ Java configuration:"
+        java -version
+        echo "JAVA_HOME: $JAVA_HOME"
+        
+        # Test PMD installation immediately
+        echo "🧪 Testing PMD installation..."
+        if /opt/pmd/bin/pmd check --help >/dev/null 2>&1; then
+          echo "✅ PMD installed and working correctly"
+        elif /opt/pmd/bin/pmd --version >/dev/null 2>&1; then
+          echo "✅ PMD installed (legacy version format)"
+        else
+          echo "❌ PMD installation test failed"
+          echo "🔍 PMD directory contents:"
+          ls -la /opt/pmd/bin/ || echo "PMD bin directory not found"
+          echo "🔍 Java classpath test:"
+          /opt/pmd/bin/pmd check --help 2>&1 | head -5 || echo "PMD execution failed"
         fi
         
         # Create expected paths for Mule Guardian compatibility
         echo "🔗 Setting up PMD paths for Mule Guardian..."
         sudo mkdir -p /opt/homebrew/bin
-        
-        # Ensure PMD binary exists and is executable
-        if [ -f "/opt/pmd/bin/pmd" ]; then
-          sudo chmod +x /opt/pmd/bin/pmd
-          sudo ln -sf /opt/pmd/bin/pmd /opt/homebrew/bin/pmd
-        elif [ -f "/opt/pmd/bin/run.sh" ]; then
-          # Some PMD versions use run.sh
-          sudo ln -sf /opt/pmd/bin/run.sh /opt/pmd/bin/pmd
-          sudo ln -sf /opt/pmd/bin/pmd /opt/homebrew/bin/pmd
-        fi
+        sudo ln -sf /opt/pmd/bin/pmd /opt/homebrew/bin/pmd
         
         # Add to PATH
         echo "/opt/pmd/bin" >> $GITHUB_PATH
         echo "/opt/homebrew/bin" >> $GITHUB_PATH
         export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
         
-        # Verify PMD installation with correct command structure
-        echo "🧪 Verifying PMD installation..."
-        
-        # PMD 7.x uses: pmd check --version
-        # PMD 6.x uses: pmd --version or pmd -v
-        # Try multiple command formats for compatibility
-        PMD_VERIFIED=false
-        
-        for pmd_path in "/opt/pmd/bin/pmd" "/opt/homebrew/bin/pmd"; do
-          if [ -f "$pmd_path" ]; then
-            echo "Testing PMD at: $pmd_path"
-            
-            # Try different version check methods
-            if $pmd_path --version 2>/dev/null | grep -i "pmd" >/dev/null; then
-              echo "✅ PMD verified at $pmd_path (using --version)"
-              PMD_VERIFIED=true
-              break
-            elif $pmd_path -v 2>/dev/null | grep -i "pmd" >/dev/null; then
-              echo "✅ PMD verified at $pmd_path (using -v)"
-              PMD_VERIFIED=true
-              break
-            elif $pmd_path check --version 2>/dev/null | grep -i "pmd" >/dev/null; then
-              echo "✅ PMD verified at $pmd_path (using check --version)"
-              PMD_VERIFIED=true
-              break
-            else
-              echo "⚠️ Version check failed for $pmd_path, but file exists"
-            fi
-          fi
-        done
-        
-        if [ "$PMD_VERIFIED" = "false" ]; then
-          echo "⚠️ PMD version verification failed, but installation appears successful"
-          echo "🔍 Available PMD sub-commands:"
-          /opt/pmd/bin/pmd 2>&1 | head -10 || true
-        fi
-        
         echo "✅ PMD installation completed successfully"
+        echo "📍 PMD available at: /opt/pmd/bin/pmd"
+        echo "📍 PMD symlink at: /opt/homebrew/bin/pmd"
         
     # Step 7: Install Python Dependencies
     - name: Install Python Dependencies
@@ -333,6 +243,15 @@ jobs:
           echo "🚨 This results in HIGHER compliance scores than the UI"
           echo "🚨 The UI (28% compliance) is more accurate than this result"
           echo "🚨 PMD failed to run properly - check the logs above for Java classpath errors"
+          
+          # Check if we should fail when PMD doesn't work
+          if [ "${{ inputs.require_pmd }}" = "true" ]; then
+            echo ""
+            echo "💥 FAILING WORKFLOW: require_pmd=true and PMD analysis failed"
+            echo "💡 This prevents misleading high compliance scores"
+            echo "💡 Fix PMD installation issues or set require_pmd=false to allow alternative analysis"
+            exit 1
+          fi
         else
           echo "⚠️ Could not determine which analysis method was used"
           echo "📋 Last few lines of analysis output:"
