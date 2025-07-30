@@ -21,10 +21,10 @@ on:
         type: string
         default: '.'
       project_name:
-        description: 'Name of the project being analyzed'
+        description: 'Name of the project being analyzed (defaults to repository name)'
         required: false
         type: string
-        default: 'MuleSoft Project'
+        default: ''  # Will be dynamically set to repository name if empty
       skip_quality_gate:
         description: 'Skip quality gate check (for debugging)'
         required: false
@@ -193,18 +193,41 @@ jobs:
         echo "/opt/homebrew/bin" >> $GITHUB_PATH
         export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
         
-        # Verify PMD installation
+        # Verify PMD installation with correct command structure
         echo "🧪 Verifying PMD installation..."
-        if /opt/pmd/bin/pmd --version 2>/dev/null || /opt/pmd/bin/pmd -version 2>/dev/null; then
-          echo "✅ PMD verified at /opt/pmd/bin/pmd"
-        else
-          echo "⚠️ PMD version check failed, but installation appears successful"
-        fi
         
-        if /opt/homebrew/bin/pmd --version 2>/dev/null || /opt/homebrew/bin/pmd -version 2>/dev/null; then
-          echo "✅ PMD verified at /opt/homebrew/bin/pmd (Mule Guardian expected path)"
-        else
-          echo "⚠️ PMD not accessible at expected Mule Guardian path"
+        # PMD 7.x uses: pmd check --version
+        # PMD 6.x uses: pmd --version or pmd -v
+        # Try multiple command formats for compatibility
+        PMD_VERIFIED=false
+        
+        for pmd_path in "/opt/pmd/bin/pmd" "/opt/homebrew/bin/pmd"; do
+          if [ -f "$pmd_path" ]; then
+            echo "Testing PMD at: $pmd_path"
+            
+            # Try different version check methods
+            if $pmd_path --version 2>/dev/null | grep -i "pmd" >/dev/null; then
+              echo "✅ PMD verified at $pmd_path (using --version)"
+              PMD_VERIFIED=true
+              break
+            elif $pmd_path -v 2>/dev/null | grep -i "pmd" >/dev/null; then
+              echo "✅ PMD verified at $pmd_path (using -v)"
+              PMD_VERIFIED=true
+              break
+            elif $pmd_path check --version 2>/dev/null | grep -i "pmd" >/dev/null; then
+              echo "✅ PMD verified at $pmd_path (using check --version)"
+              PMD_VERIFIED=true
+              break
+            else
+              echo "⚠️ Version check failed for $pmd_path, but file exists"
+            fi
+          fi
+        done
+        
+        if [ "$PMD_VERIFIED" = "false" ]; then
+          echo "⚠️ PMD version verification failed, but installation appears successful"
+          echo "🔍 Available PMD sub-commands:"
+          /opt/pmd/bin/pmd 2>&1 | head -10 || true
         fi
         
         echo "✅ PMD installation completed successfully"
@@ -243,8 +266,19 @@ jobs:
       id: mule-analysis
       run: |
         echo "🔍 Starting Mule Guardian analysis..."
-        echo "📍 Project: ${{ inputs.project_name }}"
+        
+        # Set dynamic project name if not provided
+        if [ -z "${{ inputs.project_name }}" ] || [ "${{ inputs.project_name }}" = "" ]; then
+          PROJECT_NAME="${{ github.event.repository.name }}"
+          echo "📍 Project: $PROJECT_NAME (auto-detected from repository)"
+        else
+          PROJECT_NAME="${{ inputs.project_name }}"
+          echo "📍 Project: $PROJECT_NAME (user-provided)"
+        fi
+        
         echo "📂 Analyzing: ${{ inputs.analysis_target }}"
+        echo "🏢 Repository: ${{ github.repository }}"
+        echo "🌿 Branch: ${{ github.ref_name }}"
         
         # Validate analysis target
         if [ ! -d "${{ inputs.analysis_target }}" ]; then
