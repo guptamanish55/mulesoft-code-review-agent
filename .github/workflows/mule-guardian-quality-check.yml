@@ -117,6 +117,17 @@ jobs:
         sudo apt-get update -qq
         sudo apt-get install -y wget unzip bc
         
+        # Ensure Java environment is properly configured
+        echo "☕ Setting up Java environment..."
+        export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
+        export PATH="$JAVA_HOME/bin:$PATH"
+        echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+        echo "$JAVA_HOME/bin" >> $GITHUB_PATH
+        
+        echo "Java version: $(java -version 2>&1)"
+        echo "JAVA_HOME: $JAVA_HOME"
+        echo "Java executable: $(which java)"
+        
         # Use a known working PMD version and simplified installation
         echo "🔄 Installing PMD 6.55.0 (known working version)..."
         
@@ -174,38 +185,87 @@ jobs:
         java -version
         echo "JAVA_HOME: $JAVA_HOME"
         
-        # Test PMD installation immediately
-        echo "🧪 Testing PMD installation..."
-        if /opt/pmd/bin/pmd check --help >/dev/null 2>&1; then
+        # Test PMD installation immediately with proper Java environment
+        echo "🧪 Testing PMD installation with Java environment..."
+        export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
+        export PATH="$JAVA_HOME/bin:$PATH"
+        
+        echo "🔍 Java environment for PMD test:"
+        echo "  JAVA_HOME: $JAVA_HOME"
+        echo "  Java version: $(java -version 2>&1 | head -1)"
+        echo "  Java path: $(which java)"
+        
+        # Test with proper environment
+        if JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd check --help >/dev/null 2>&1; then
           echo "✅ PMD installed and working correctly (check command)"
-        elif /opt/pmd/bin/pmd --version >/dev/null 2>&1; then
+        elif JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd --version >/dev/null 2>&1; then
           echo "✅ PMD installed and working (version command)"
-        elif /opt/pmd/bin/pmd -h >/dev/null 2>&1; then
+        elif JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd -h >/dev/null 2>&1; then
           echo "✅ PMD installed and working (help command)"
         else
           echo "❌ PMD installation test failed"
           echo "🔍 Trying to run PMD for diagnostics:"
-          /opt/pmd/bin/pmd 2>&1 | head -5 || echo "PMD execution completely failed"
+          echo "🔍 PMD output with environment:"
+          JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd 2>&1 | head -10 || echo "PMD execution completely failed"
+          
+          echo "🔍 Checking PMD script contents:"
+          head -10 /opt/pmd/bin/pmd || echo "Cannot read PMD script"
+          
+          echo "🔍 Java classpath test:"
+          JAVA_HOME="$JAVA_HOME" java -cp "/opt/pmd/lib/*" net.sourceforge.pmd.PMD --help 2>&1 | head -5 || echo "Direct Java execution failed"
         fi
+        
+        # Create a PMD wrapper script with proper Java environment
+        echo "🔗 Creating PMD wrapper with Java environment..."
+        sudo tee /opt/pmd/bin/pmd-wrapper > /dev/null << 'EOF'
+#!/bin/bash
+# PMD Wrapper Script with Java Environment Setup
+
+# Ensure Java environment is set
+if [ -z "$JAVA_HOME" ]; then
+    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
+fi
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Execute PMD with proper environment
+exec /opt/pmd/bin/pmd "$@"
+EOF
+        
+        sudo chmod +x /opt/pmd/bin/pmd-wrapper
         
         # Create expected paths for Mule Guardian compatibility
         echo "🔗 Setting up PMD paths for Mule Guardian..."
         sudo mkdir -p /opt/homebrew/bin
-        sudo ln -sf /opt/pmd/bin/pmd /opt/homebrew/bin/pmd
+        sudo ln -sf /opt/pmd/bin/pmd-wrapper /opt/homebrew/bin/pmd
+        sudo ln -sf /opt/pmd/bin/pmd-wrapper /opt/pmd/bin/pmd-safe
         
         # Add to PATH
         echo "/opt/pmd/bin" >> $GITHUB_PATH
         echo "/opt/homebrew/bin" >> $GITHUB_PATH
         export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
         
-        # Final verification
+        # Final verification with wrapper script
         echo "🔍 Final PMD installation verification:"
         ls -la /opt/pmd/bin/pmd || echo "Main PMD path missing"
+        ls -la /opt/pmd/bin/pmd-wrapper || echo "PMD wrapper missing"
         ls -la /opt/homebrew/bin/pmd || echo "Homebrew PMD path missing"
         
-        echo "✅ PMD installation completed successfully"
-        echo "📍 PMD available at: /opt/pmd/bin/pmd"
+        # Test the wrapper script
+        echo "🧪 Testing PMD wrapper script..."
+        if /opt/homebrew/bin/pmd --version >/dev/null 2>&1; then
+          echo "✅ PMD wrapper working correctly"
+        elif /opt/homebrew/bin/pmd -h >/dev/null 2>&1; then
+          echo "✅ PMD wrapper working (help command)"
+        else
+          echo "⚠️ PMD wrapper test failed - will rely on fallback mechanisms"
+          echo "🔍 Wrapper test output:"
+          /opt/homebrew/bin/pmd 2>&1 | head -5 || echo "Wrapper execution failed"
+        fi
+        
+        echo "✅ PMD installation completed"
+        echo "📍 PMD wrapper at: /opt/pmd/bin/pmd-wrapper"
         echo "📍 PMD symlink at: /opt/homebrew/bin/pmd"
+        echo "📍 Java-safe PMD at: /opt/pmd/bin/pmd-safe"
         
     # Step 7: Install Python Dependencies
     - name: Install Python Dependencies
