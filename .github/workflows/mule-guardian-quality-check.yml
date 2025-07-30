@@ -217,18 +217,18 @@ jobs:
         
         # Create a PMD wrapper script with proper Java environment
         echo "🔗 Creating PMD wrapper with Java environment..."
-        sudo tee /opt/pmd/bin/pmd-wrapper > /dev/null << 'EOF'
+        sudo tee /opt/pmd/bin/pmd-wrapper > /dev/null <<EOF
 #!/bin/bash
 # PMD Wrapper Script with Java Environment Setup
 
 # Ensure Java environment is set
-if [ -z "$JAVA_HOME" ]; then
-    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
+if [ -z "\$JAVA_HOME" ]; then
+    export JAVA_HOME=\$(readlink -f /usr/bin/java | sed "s:bin/java::")
 fi
-export PATH="$JAVA_HOME/bin:$PATH"
+export PATH="\$JAVA_HOME/bin:\$PATH"
 
 # Execute PMD with proper environment
-exec /opt/pmd/bin/pmd "$@"
+exec /opt/pmd/bin/pmd "\$@"
 EOF
         
         sudo chmod +x /opt/pmd/bin/pmd-wrapper
