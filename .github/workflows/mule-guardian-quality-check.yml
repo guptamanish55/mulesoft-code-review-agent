@@ -244,52 +244,33 @@ jobs:
         PROJECT_NAME="${{ inputs.project_name }}"
         THRESHOLD="${{ inputs.compliance_threshold }}"
         
-        # Generate HTML report
-        cat > quality-report.html << EOF
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Mule Guardian Quality Report - $PROJECT_NAME</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f7fa; }
-        .header { background: #667eea; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        .metric { display: inline-block; background: white; margin: 10px; padding: 20px; border-radius: 8px; min-width: 120px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .metric h2 { margin: 0; font-size: 2em; }
-        .metric p { margin: 10px 0 0 0; color: #666; }
-        .passed { border-left: 4px solid #28a745; }
-        .failed { border-left: 4px solid #dc3545; }
-        .summary { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🛡️ Mule Guardian Quality Report</h1>
-        <p>$PROJECT_NAME - Code Quality Analysis Results</p>
-    </div>
-    
-    <div class="metric $([ $COMPLIANCE_SCORE -ge $THRESHOLD ] && echo "passed" || echo "failed")">
-        <h2>${COMPLIANCE_SCORE}%</h2>
-        <p>Compliance Score</p>
-        <small>Threshold: ${THRESHOLD}%</small>
-    </div>
-    
-    <div class="metric">
-        <h2>$TOTAL_VIOLATIONS</h2>
-        <p>Total Violations</p>
-    </div>
-    
-    <div class="summary">
-        <h3>Analysis Summary</h3>
-        <p><strong>Project:</strong> $PROJECT_NAME</p>
-        <p><strong>Analysis Target:</strong> ${{ inputs.analysis_target }}</p>
-        <p><strong>Quality Gate:</strong> $([ $COMPLIANCE_SCORE -ge $THRESHOLD ] && echo "✅ PASSED" || echo "❌ FAILED")</p>
-        <p><strong>Timestamp:</strong> $(date)</p>
-    </div>
-    
-    <p><em>Download the JSON report for detailed violation information.</em></p>
-</body>
-</html>
-EOF
+        # Generate HTML report using echo statements to avoid YAML conflicts
+        echo "<!DOCTYPE html>" > quality-report.html
+        echo "<html><head><title>Mule Guardian Quality Report - $PROJECT_NAME</title>" >> quality-report.html
+        echo "<style>body{font-family:Arial;margin:40px;background:#f5f7fa}.header{background:#667eea;color:white;padding:20px;border-radius:8px;margin-bottom:20px}.metric{display:inline-block;background:white;margin:10px;padding:20px;border-radius:8px;min-width:120px;text-align:center;box-shadow:0 2px 4px rgba(0,0,0,0.1)}.metric h2{margin:0;font-size:2em}.metric p{margin:10px 0 0 0;color:#666}.passed{border-left:4px solid #28a745}.failed{border-left:4px solid #dc3545}.summary{background:white;padding:20px;border-radius:8px;margin:20px 0}</style>" >> quality-report.html
+        echo "</head><body>" >> quality-report.html
+        echo "<div class='header'><h1>🛡️ Mule Guardian Quality Report</h1><p>$PROJECT_NAME - Code Quality Analysis Results</p></div>" >> quality-report.html
+        
+        # Determine status class
+        if [ $COMPLIANCE_SCORE -ge $THRESHOLD ]; then
+          STATUS_CLASS="passed"
+          STATUS_TEXT="✅ PASSED"
+        else
+          STATUS_CLASS="failed" 
+          STATUS_TEXT="❌ FAILED"
+        fi
+        
+        echo "<div class='metric $STATUS_CLASS'><h2>${COMPLIANCE_SCORE}%</h2><p>Compliance Score</p><small>Threshold: ${THRESHOLD}%</small></div>" >> quality-report.html
+        echo "<div class='metric'><h2>$TOTAL_VIOLATIONS</h2><p>Total Violations</p></div>" >> quality-report.html
+        echo "<div class='summary'>" >> quality-report.html
+        echo "<h3>Analysis Summary</h3>" >> quality-report.html
+        echo "<p><strong>Project:</strong> $PROJECT_NAME</p>" >> quality-report.html
+        echo "<p><strong>Analysis Target:</strong> ${{ inputs.analysis_target }}</p>" >> quality-report.html
+        echo "<p><strong>Quality Gate:</strong> $STATUS_TEXT</p>" >> quality-report.html
+        echo "<p><strong>Timestamp:</strong> $(date)</p>" >> quality-report.html
+        echo "</div>" >> quality-report.html
+        echo "<p><em>Download the JSON report for detailed violation information.</em></p>" >> quality-report.html
+        echo "</body></html>" >> quality-report.html
         
         echo "✅ HTML report generated successfully"
         
