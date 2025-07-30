@@ -165,7 +165,7 @@ jobs:
             # Ensure Java is properly configured
             echo "☕ Verifying Java installation..."
             java -version
-            export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-11-openjdk-amd64}
+            export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
             
             # Try to download a working version with better extraction
             if wget --timeout=30 "https://repo1.maven.org/maven2/net/sourceforge/pmd/pmd-dist/6.55.0/pmd-dist-6.55.0-bin.zip" 2>/dev/null; then
@@ -178,12 +178,10 @@ jobs:
               sudo chmod +x /opt/pmd/bin/pmd
               
               # Create a wrapper script that ensures proper Java execution
-              sudo tee /opt/pmd/bin/pmd_wrapper << 'EOF'
-#!/bin/bash
-export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-11-openjdk-amd64}
-export PATH=$JAVA_HOME/bin:$PATH
-exec /opt/pmd/bin/pmd "$@"
-EOF
+              echo "#!/bin/bash" | sudo tee /opt/pmd/bin/pmd_wrapper > /dev/null
+              echo "export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" | sudo tee -a /opt/pmd/bin/pmd_wrapper > /dev/null
+              echo "export PATH=\$JAVA_HOME/bin:\$PATH" | sudo tee -a /opt/pmd/bin/pmd_wrapper > /dev/null
+              echo "exec /opt/pmd/bin/pmd \"\$@\"" | sudo tee -a /opt/pmd/bin/pmd_wrapper > /dev/null
               sudo chmod +x /opt/pmd/bin/pmd_wrapper
               sudo ln -sf /opt/pmd/bin/pmd_wrapper /opt/homebrew/bin/pmd
               
