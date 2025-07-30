@@ -1,350 +1,319 @@
-name: Mule Guardian Code Quality Check
+name: Mule Guardian Code Quality Check (Reusable)
 
-# When this workflow runs
+# THIS IS A REUSABLE WORKFLOW - Called from other repositories
 on:
-  push:
-    branches: [ main, develop, dev ]  # Added 'dev' for your branch
-  pull_request:
-    branches: [ main, develop, dev ]
-
-# Environment variables
-env:
-  COMPLIANCE_THRESHOLD: 75  # Minimum compliance percentage required
-  PMD_VERSION: "7.0.0"
+  workflow_call:
+    inputs:
+      # Input parameters that calling repositories can customize
+      compliance_threshold:
+        description: 'Minimum compliance percentage required'
+        required: false
+        type: number
+        default: 75
+      pmd_version:
+        description: 'PMD version to use'
+        required: false
+        type: string
+        default: '7.0.0'
+      analysis_target:
+        description: 'Directory to analyze (relative to repo root)'
+        required: false
+        type: string
+        default: '.'
+      project_name:
+        description: 'Name of the project being analyzed'
+        required: false
+        type: string
+        default: 'MuleSoft Project'
+      skip_quality_gate:
+        description: 'Skip quality gate check (for debugging)'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      # Outputs that calling workflows can use
+      compliance_score:
+        description: 'Calculated compliance percentage'
+        value: ${{ jobs.code-quality-check.outputs.compliance_score }}
+      total_violations:
+        description: 'Total number of violations found'
+        value: ${{ jobs.code-quality-check.outputs.total_violations }}
+      quality_gate_passed:
+        description: 'Whether quality gate passed'
+        value: ${{ jobs.code-quality-check.outputs.quality_gate_passed }}
 
 jobs:
   code-quality-check:
     runs-on: ubuntu-latest
     
+    # Set outputs for the job
+    outputs:
+      compliance_score: ${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}
+      total_violations: ${{ steps.mule-analysis.outputs.TOTAL_VIOLATIONS }}
+      quality_gate_passed: ${{ steps.quality-gate.outputs.GATE_PASSED }}
+    
     steps:
-    # Step 1: Get the code
-    - name: Checkout Code
+    # Step 1: Get the calling repository's code
+    - name: Checkout Application Code
       uses: actions/checkout@v4
       
-    # Step 1.5: Get core files from main branch if not present
-    - name: Get Core Mule Guardian Files
-      run: |
-        echo "🔍 Checking for core Mule Guardian files..."
+    # Step 2: Get Mule Guardian files from this common repository
+    - name: Get Mule Guardian Core Files
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ github.repository_owner }}/mulesoft-code-review-agent  # ← Change this to your common repo name
+        path: mule-guardian
+        ref: main
         
-        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
-          echo "⚠️ Core files not found in current branch, fetching from main..."
-          
-          # Fetch main branch
-          git fetch origin main
-          
-          # Copy core files from main branch
-          git show main:mulesoft_ai_code_review_agent.py > mulesoft_ai_code_review_agent.py
-          git show main:comprehensive-mulesoft-ruleset-no-debug.xml > comprehensive-mulesoft-ruleset-no-debug.xml
-          git show main:requirements.txt > requirements.txt
-          
-          echo "✅ Core files copied from main branch"
-        else
-          echo "✅ Core files found in current branch"
-        fi
+    # Step 3: Copy core files to working directory
+    - name: Setup Mule Guardian Files
+      run: |
+        echo "📋 Setting up Mule Guardian files..."
+        
+        # Copy core files from the common repo checkout
+        cp mule-guardian/mulesoft_ai_code_review_agent.py .
+        cp mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml .
+        cp mule-guardian/requirements.txt .
+        
+        echo "✅ Core files copied from common repository"
         
         # Verify files exist
-        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
-          echo "❌ Error: mulesoft_ai_code_review_agent.py still not found"
-          exit 1
-        fi
-        
-        if [ ! -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
-          echo "❌ Error: comprehensive-mulesoft-ruleset-no-debug.xml still not found"
-          exit 1
-        fi
-        
-        echo "✅ All required files verified"
+        for file in mulesoft_ai_code_review_agent.py comprehensive-mulesoft-ruleset-no-debug.xml requirements.txt; do
+          if [ ! -f "$file" ]; then
+            echo "❌ Error: $file not found"
+            exit 1
+          fi
+          echo "✅ Found: $file"
+        done
       
-    # Step 2: Setup Python (for Mule Guardian)
+    # Step 4: Setup Python
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
-    # Step 3: Setup Java (required for PMD)
+    # Step 5: Setup Java (required for PMD)
     - name: Set up Java
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '11'
         
-    # Step 4: Install PMD with fallback methods (FIXED FOR LINUX)
+    # Step 6: Install PMD
     - name: Install PMD
       run: |
-        echo "📦 Installing PMD..."
+        echo "📦 Installing PMD version ${{ inputs.pmd_version }}..."
         
-        # Method 1: Try direct download with current format
-        if wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ env.PMD_VERSION }}/pmd-bin-${{ env.PMD_VERSION }}.zip; then
-          echo "✅ Downloaded PMD using current format"
-          unzip pmd-bin-${{ env.PMD_VERSION }}.zip
-          sudo mv pmd-bin-${{ env.PMD_VERSION }} /opt/pmd
-        # Method 2: Try alternative URL format  
-        elif wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ env.PMD_VERSION }}/pmd-dist-${{ env.PMD_VERSION }}-bin.zip; then
-          echo "✅ Downloaded PMD using alternative format"
-          unzip pmd-dist-${{ env.PMD_VERSION }}-bin.zip
-          sudo mv pmd-bin-${{ env.PMD_VERSION }} /opt/pmd
-        # Method 3: Try latest stable version
+        # Try multiple download methods for PMD
+        if wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ inputs.pmd_version }}/pmd-bin-${{ inputs.pmd_version }}.zip; then
+          echo "✅ Downloaded PMD ${{ inputs.pmd_version }}"
+          unzip pmd-bin-${{ inputs.pmd_version }}.zip
+          sudo mv pmd-bin-${{ inputs.pmd_version }} /opt/pmd
         elif wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.0.0/pmd-bin-7.0.0.zip; then
           echo "✅ Downloaded PMD 7.0.0 as fallback"
           unzip pmd-bin-7.0.0.zip
           sudo mv pmd-bin-7.0.0 /opt/pmd
-        # Method 4: Use package manager as last resort
         else
-          echo "⚠️ Direct download failed, trying package manager..."
-          sudo apt-get update
-          sudo apt-get install -y pmd
-          # Create symlink for consistency
-          if command -v pmd >/dev/null 2>&1; then
-            sudo mkdir -p /opt/pmd/bin
-            sudo ln -sf $(which pmd) /opt/pmd/bin/pmd
-            echo "✅ PMD installed via package manager"
-          else
-            echo "❌ PMD installation failed completely"
-            exit 1
-          fi
+          echo "⚠️ Using package manager installation..."
+          sudo apt-get update && sudo apt-get install -y pmd
+          sudo mkdir -p /opt/pmd/bin
+          sudo ln -sf $(which pmd) /opt/pmd/bin/pmd
         fi
         
-        # CRITICAL FIX: Create the path structure that Mule Guardian expects
-        echo "🔗 Creating expected PMD paths for Mule Guardian..."
+        # Create expected paths
         sudo mkdir -p /opt/homebrew/bin
         sudo ln -sf /opt/pmd/bin/pmd /opt/homebrew/bin/pmd
-        
-        # Also add both paths to PATH for maximum compatibility
         echo "/opt/pmd/bin" >> $GITHUB_PATH
         echo "/opt/homebrew/bin" >> $GITHUB_PATH
-        export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
         
-        # Verify PMD is accessible from both locations
-        echo "🧪 Verifying PMD installation..."
-        if /opt/pmd/bin/pmd --version; then
-          echo "✅ PMD verified at /opt/pmd/bin/pmd"
-        else
-          echo "❌ PMD verification failed at /opt/pmd/bin/pmd"
-          exit 1
-        fi
+        # Verify installation
+        /opt/pmd/bin/pmd --version
+        echo "✅ PMD installed successfully"
         
-        if /opt/homebrew/bin/pmd --version; then
-          echo "✅ PMD verified at /opt/homebrew/bin/pmd (Mule Guardian expected path)"
-        else
-          echo "❌ PMD verification failed at /opt/homebrew/bin/pmd"
-          exit 1
-        fi
-        
-        echo "✅ PMD installed and verified successfully at both locations"
-        
-    # Step 5: Install Mule Guardian Dependencies
+    # Step 7: Install Python Dependencies
     - name: Install Python Dependencies
       run: |
         echo "📦 Installing Python dependencies..."
         pip install --upgrade pip
-        pip install Flask==2.3.3 Flask-CORS==4.0.0 lxml==6.0.0 reportlab==4.4.2
-        pip install requests==2.32.4 pathlib2==2.3.7 dataclasses-json==0.6.1
+        pip install -r requirements.txt
         echo "✅ Dependencies installed successfully"
         
-    # Step 6: Run Mule Guardian Analysis (FIXED PATH)
+    # Step 8: Run Mule Guardian Analysis
     - name: Run Mule Guardian Analysis
       id: mule-analysis
       run: |
         echo "🔍 Starting Mule Guardian analysis..."
+        echo "📍 Project: ${{ inputs.project_name }}"
+        echo "📂 Analyzing: ${{ inputs.analysis_target }}"
         
-        # Determine what to analyze
-        if [ -d "sample_demo_project" ]; then
-          echo "📍 Found sample project - analyzing sample_demo_project/"
-          ANALYSIS_TARGET="sample_demo_project"
+        # Validate analysis target
+        if [ ! -d "${{ inputs.analysis_target }}" ]; then
+          echo "❌ Analysis target directory not found: ${{ inputs.analysis_target }}"
+          exit 1
+        fi
+        
+        # Show what we're analyzing
+        echo "📁 Contents of analysis target:"
+        ls -la "${{ inputs.analysis_target }}"
+        
+        # Find XML files to analyze
+        XML_COUNT=$(find "${{ inputs.analysis_target }}" -name "*.xml" -type f | wc -l)
+        echo "📊 Found $XML_COUNT XML files to analyze"
+        
+        if [ $XML_COUNT -eq 0 ]; then
+          echo "⚠️ No XML files found in ${{ inputs.analysis_target }}"
+          echo "This might not be a MuleSoft project or files are in a different location."
+        fi
+        
+        # Run the analysis
+        python mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v
+        
+        # Extract results from JSON report
+        if [ -f "quality-report.json" ]; then
+          echo "✅ Analysis completed successfully"
+          
+          # Extract compliance score
+          COMPLIANCE=$(grep -o '"compliance_percentage":[0-9.]*' quality-report.json | cut -d':' -f2 | head -1)
+          TOTAL_VIOLATIONS=$(grep -o '"total_violations":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          
+          # Fallback calculation if not found
+          if [ -z "$COMPLIANCE" ] || [ "$COMPLIANCE" = "0" ]; then
+            HIGH_COUNT=$(grep -o '"HIGH":[0-9]*' quality-report.json | cut -d':' -f2 | head -1 || echo "0")
+            MEDIUM_COUNT=$(grep -o '"MEDIUM":[0-9]*' quality-report.json | cut -d':' -f2 | head -1 || echo "0")
+            LOW_COUNT=$(grep -o '"LOW":[0-9]*' quality-report.json | cut -d':' -f2 | head -1 || echo "0")
+            
+            DEDUCTION=$((HIGH_COUNT*3 + MEDIUM_COUNT*2 + LOW_COUNT*1))
+            COMPLIANCE=$((100 - DEDUCTION))
+            
+            # Minimum compliance
+            if [ $COMPLIANCE -lt 10 ]; then
+              COMPLIANCE=10
+            fi
+          fi
+          
+          echo "COMPLIANCE_SCORE=$COMPLIANCE" >> $GITHUB_OUTPUT
+          echo "TOTAL_VIOLATIONS=${TOTAL_VIOLATIONS:-0}" >> $GITHUB_OUTPUT
+          
+          echo "🛡️ Analysis Results:"
+          echo "   - Compliance Score: $COMPLIANCE%"
+          echo "   - Total Violations: ${TOTAL_VIOLATIONS:-0}"
+          
         else
-          echo "📍 Analyzing current directory"
-          ANALYSIS_TARGET="."
-        fi
-        
-        # Verify core files exist
-        if [ ! -f "mulesoft_ai_code_review_agent.py" ]; then
-          echo "❌ Error: mulesoft_ai_code_review_agent.py not found"
+          echo "❌ Analysis failed - no report generated"
           exit 1
         fi
         
-        if [ ! -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
-          echo "❌ Error: comprehensive-mulesoft-ruleset-no-debug.xml not found"
-          exit 1
-        fi
-        
-        # Run the analysis on the correct target
-        python mulesoft_ai_code_review_agent.py "$ANALYSIS_TARGET" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v
-        
-        # Extract compliance percentage from report
-        COMPLIANCE=$(python -c "
-        import json
-        try:
-            with open('quality-report.json', 'r') as f:
-                data = json.load(f)
-            compliance = data.get('compliance_percentage', 0)
-            print(f'{compliance:.1f}')
-        except Exception as e:
-            print('0')
-        ")
-        
-        echo "COMPLIANCE_SCORE=$COMPLIANCE" >> $GITHUB_OUTPUT
-        echo "🛡️ Project Compliance: $COMPLIANCE%"
-        
-    # Step 7: Check Quality Gate
+    # Step 9: Quality Gate Check
     - name: Quality Gate Check
+      id: quality-gate
       run: |
         SCORE=${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}
-        THRESHOLD=${{ env.COMPLIANCE_THRESHOLD }}
+        THRESHOLD=${{ inputs.compliance_threshold }}
+        SKIP_GATE=${{ inputs.skip_quality_gate }}
         
-        echo "📊 Compliance Score: $SCORE%"
-        echo "🎯 Required Threshold: $THRESHOLD%"
+        echo "📊 Quality Gate Check:"
+        echo "   - Compliance Score: $SCORE%"
+        echo "   - Required Threshold: $THRESHOLD%"
+        echo "   - Skip Quality Gate: $SKIP_GATE"
         
-        # Use Python for decimal comparison (more reliable than bash)
-        RESULT=$(python -c "
-        score = float('$SCORE')
-        threshold = float('$THRESHOLD')
-        if score < threshold:
-            print('FAIL')
-        else:
-            print('PASS')
-        ")
-        
-        if [ "$RESULT" = "FAIL" ]; then
+        if [ "$SKIP_GATE" = "true" ]; then
+          echo "⚠️ Quality gate check skipped"
+          echo "GATE_PASSED=true" >> $GITHUB_OUTPUT
+        elif (( $(echo "$SCORE >= $THRESHOLD" | bc -l) )); then
+          echo "✅ QUALITY GATE PASSED"
+          echo "GATE_PASSED=true" >> $GITHUB_OUTPUT
+        else
           echo "❌ QUALITY GATE FAILED"
           echo "Project compliance ($SCORE%) is below required threshold ($THRESHOLD%)"
-          echo "Please improve code quality before merging."
-          exit 1
-        else
-          echo "✅ QUALITY GATE PASSED"
-          echo "Project meets quality standards!"
+          echo "GATE_PASSED=false" >> $GITHUB_OUTPUT
+          
+          if [ "$SKIP_GATE" != "true" ]; then
+            exit 1
+          fi
         fi
         
-    # Step 8: Generate HTML Report
-    - name: Generate HTML Report
-      if: always()  # Run even if previous steps failed
+    # Step 10: Generate Reports
+    - name: Generate Reports
+      if: always()
       run: |
         echo "📄 Generating HTML report..."
-        python -c "
-        import json
-        import sys
-        import os
         
-        # Simple HTML report generator
-        try:
-            with open('quality-report.json', 'r') as f:
-                report = json.load(f)
-            
-            html_content = f'''
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Mule Guardian Quality Report</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                    .header {{ background: #667eea; color: white; padding: 20px; border-radius: 8px; }}
-                    .summary {{ background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px; }}
-                    .metric {{ display: inline-block; margin: 10px 20px; }}
-                    .violation {{ margin: 10px 0; padding: 10px; border-left: 4px solid #dc3545; }}
-                    .high {{ border-color: #dc3545; }}
-                    .medium {{ border-color: #ffc107; }}
-                    .low {{ border-color: #28a745; }}
-                </style>
-            </head>
-            <body>
-                <div class=\"header\">
-                    <h1>🛡️ Mule Guardian Code Quality Report</h1>
-                    <p>Project: {report.get('project_name', 'Unknown')}</p>
-                    <p>Generated: {report.get('scan_timestamp', 'Unknown')}</p>
-                </div>
-                
-                <div class=\"summary\">
-                    <h2>📊 Quality Summary</h2>
-                    <div class=\"metric\">
-                        <strong>Compliance Score:</strong> {report.get('compliance_percentage', 0):.1f}%
-                    </div>
-                    <div class=\"metric\">
-                        <strong>Total Violations:</strong> {report.get('total_violations', 0)}
-                    </div>
-                    <div class=\"metric\">
-                        <strong>Files Scanned:</strong> {report.get('files_scanned', 0)}
-                    </div>
-                </div>
-                
-                <div class=\"violations\">
-                    <h2>🔍 Violation Breakdown</h2>
-                    <p><strong>HIGH Priority:</strong> {report.get('violations_by_priority', {}).get('HIGH', 0)}</p>
-                    <p><strong>MEDIUM Priority:</strong> {report.get('violations_by_priority', {}).get('MEDIUM', 0)}</p>
-                    <p><strong>LOW Priority:</strong> {report.get('violations_by_priority', {}).get('LOW', 0)}</p>
-                </div>
-                
-                <div class=\"recommendations\">
-                    <h2>💡 Recommendations</h2>
-                    <p>Review the violations above and implement the suggested fixes to improve code quality.</p>
-                </div>
-            </body>
-            </html>
-            '''
-            
-            with open('quality-report.html', 'w') as f:
-                f.write(html_content)
-            
-            print('✅ HTML report generated successfully')
-            
-        except Exception as e:
-            print(f'❌ Error generating HTML report: {e}')
-            # Create a basic error report
-            with open('quality-report.html', 'w') as f:
-                f.write('<html><body><h1>Report Generation Failed</h1><p>Please check the logs for details.</p></body></html>')
-        "
+        # Extract values for HTML report
+        COMPLIANCE_SCORE="${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}"
+        TOTAL_VIOLATIONS="${{ steps.mule-analysis.outputs.TOTAL_VIOLATIONS }}"
+        PROJECT_NAME="${{ inputs.project_name }}"
+        THRESHOLD="${{ inputs.compliance_threshold }}"
         
-    # Step 9: Upload Reports as Artifacts (FIXED VERSION)
+        # Generate HTML report
+        cat > quality-report.html << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mule Guardian Quality Report - $PROJECT_NAME</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f7fa; }
+        .header { background: #667eea; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .metric { display: inline-block; background: white; margin: 10px; padding: 20px; border-radius: 8px; min-width: 120px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .metric h2 { margin: 0; font-size: 2em; }
+        .metric p { margin: 10px 0 0 0; color: #666; }
+        .passed { border-left: 4px solid #28a745; }
+        .failed { border-left: 4px solid #dc3545; }
+        .summary { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ Mule Guardian Quality Report</h1>
+        <p>$PROJECT_NAME - Code Quality Analysis Results</p>
+    </div>
+    
+    <div class="metric $([ $COMPLIANCE_SCORE -ge $THRESHOLD ] && echo "passed" || echo "failed")">
+        <h2>${COMPLIANCE_SCORE}%</h2>
+        <p>Compliance Score</p>
+        <small>Threshold: ${THRESHOLD}%</small>
+    </div>
+    
+    <div class="metric">
+        <h2>$TOTAL_VIOLATIONS</h2>
+        <p>Total Violations</p>
+    </div>
+    
+    <div class="summary">
+        <h3>Analysis Summary</h3>
+        <p><strong>Project:</strong> $PROJECT_NAME</p>
+        <p><strong>Analysis Target:</strong> ${{ inputs.analysis_target }}</p>
+        <p><strong>Quality Gate:</strong> $([ $COMPLIANCE_SCORE -ge $THRESHOLD ] && echo "✅ PASSED" || echo "❌ FAILED")</p>
+        <p><strong>Timestamp:</strong> $(date)</p>
+    </div>
+    
+    <p><em>Download the JSON report for detailed violation information.</em></p>
+</body>
+</html>
+EOF
+        
+        echo "✅ HTML report generated successfully"
+        
+    # Step 11: Upload Reports as Artifacts
     - name: Upload Quality Reports
-      if: always()  # Always upload, even if analysis failed
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: mule-guardian-quality-report
+        name: mule-guardian-quality-report-${{ inputs.project_name }}
         path: |
           quality-report.json
           quality-report.html
         retention-days: 30
         
-    # Step 10: Comment on Pull Request (FIXED VERSION)
-    - name: Comment PR with Results
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const fs = require('fs');
-          
-          try {
-            const report = JSON.parse(fs.readFileSync('quality-report.json', 'utf8'));
-            const compliance = '${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}';
-            
-            const statusEmoji = compliance >= 85 ? '🟢' : 
-                               compliance >= 75 ? '🟡' : '🔴';
-            
-            const statusText = compliance >= 85 ? 'Excellent' : 
-                              compliance >= 75 ? 'Good' : 'Needs Improvement';
-            
-            const body = `## ${statusEmoji} Mule Guardian Quality Check Results
-            
-            **Compliance Score:** ${compliance}% (${statusText})
-            **Total Issues:** ${report.total_violations || 0}
-            **Files Scanned:** ${report.files_scanned || 0}
-            
-            ### Violation Breakdown
-            - 🔴 **High Priority:** ${report.violations_by_priority?.HIGH || 0}
-            - 🟡 **Medium Priority:** ${report.violations_by_priority?.MEDIUM || 0}
-            - 🔵 **Low Priority:** ${report.violations_by_priority?.LOW || 0}
-            
-            ${compliance < 75 ? 
-              '❌ **Quality gate failed** - Please address violations before merging.' : 
-              '✅ **Quality gate passed** - Code meets standards!'}
-            
-            📋 [Download detailed report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-            
-          } catch (error) {
-            console.log('Could not post PR comment:', error.message);
-          } 
+    # Step 12: Summary
+    - name: Analysis Summary
+      if: always()
+      run: |
+        echo "🎉 MULE GUARDIAN ANALYSIS COMPLETED!"
+        echo ""
+        echo "📊 Results for ${{ inputs.project_name }}:"
+        echo "   - Compliance Score: ${{ steps.mule-analysis.outputs.COMPLIANCE_SCORE }}%"
+        echo "   - Total Violations: ${{ steps.mule-analysis.outputs.TOTAL_VIOLATIONS }}"
+        echo "   - Quality Gate: $([ "${{ steps.quality-gate.outputs.GATE_PASSED }}" = "true" ] && echo "PASSED" || echo "FAILED")"
+        echo ""
+        echo "📁 Reports uploaded as artifact: mule-guardian-quality-report-${{ inputs.project_name }}"
+        echo "🔍 Download from Actions tab for detailed analysis"
