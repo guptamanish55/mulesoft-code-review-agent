@@ -96,7 +96,7 @@ class MuleSoftCodeReviewAgent:
     def check_pmd_installation(self) -> bool:
         """Check if PMD is installed and accessible"""
         # Try multiple PMD paths and command formats
-        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd']
+        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd']
         version_commands = ['--version', '-v', 'check --version']
         
         for pmd_path in pmd_paths:
@@ -305,7 +305,7 @@ class MuleSoftCodeReviewAgent:
         file_list_path = self._create_file_list()
         
         # Try multiple PMD paths (same as check_pmd_installation)
-        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd']
+        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd']
         pmd_executable = None
         
         for pmd_path in pmd_paths:
@@ -329,8 +329,29 @@ class MuleSoftCodeReviewAgent:
         
         logger.info(f"Running PMD analysis with command: {' '.join(cmd[:3])}...")
         
+        # Ensure Java environment is properly set for PMD execution
+        pmd_env = os.environ.copy()
+        if 'JAVA_HOME' not in pmd_env or not pmd_env['JAVA_HOME']:
+            # Try to find Java home
+            try:
+                java_path = subprocess.run(['which', 'java'], capture_output=True, text=True, timeout=10)
+                if java_path.returncode == 0 and java_path.stdout.strip():
+                    # Get JAVA_HOME from java executable path
+                    java_home = os.path.dirname(os.path.dirname(java_path.stdout.strip()))
+                    if os.path.exists(os.path.join(java_home, 'lib')):
+                        pmd_env['JAVA_HOME'] = java_home
+                        logger.info(f"Set JAVA_HOME for PMD: {java_home}")
+            except Exception as e:
+                logger.warning(f"Could not determine JAVA_HOME: {e}")
+        
+        # Ensure PATH includes Java bin directory
+        if 'JAVA_HOME' in pmd_env:
+            java_bin = os.path.join(pmd_env['JAVA_HOME'], 'bin')
+            if java_bin not in pmd_env.get('PATH', ''):
+                pmd_env['PATH'] = f"{java_bin}{os.pathsep}{pmd_env.get('PATH', '')}"
+        
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=pmd_env)
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
@@ -352,7 +373,7 @@ class MuleSoftCodeReviewAgent:
                     alt_cmd[0] = alternative_paths[0]
                     
                     try:
-                        alt_result = subprocess.run(alt_cmd, capture_output=True, text=True, timeout=300)
+                        alt_result = subprocess.run(alt_cmd, capture_output=True, text=True, timeout=300, env=pmd_env)
                         if alt_result.returncode in [0, 4] and alt_result.stdout.strip():
                             logger.info("✅ Alternative PMD executable worked - using FULL PMD analysis")
                             return alt_result.stdout, duration
