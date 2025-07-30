@@ -61,7 +61,7 @@ jobs:
     - name: Get Mule Guardian Core Files
       uses: actions/checkout@v4
       with:
-        repository: ${{ github.repository_owner }}/mulesoft-code-review-agent  # ← Change this to your common repo name
+        repository: ${{ github.repository_owner }}/mulesoft-code-review-agent
         path: mule-guardian
         ref: main
         
@@ -157,15 +157,36 @@ jobs:
             SUCCESS=true
           else
             echo "❌ Package manager installation also failed"
-            echo "🔄 Installing PMD manually using Java..."
+            echo "🔄 Installing PMD manually with enhanced Java setup..."
             
-            # Manual installation - create a simple PMD wrapper
+            # Manual installation with proper Java configuration
             sudo mkdir -p /opt/pmd/bin
             
-            # Try to download a working JAR version
+            # Ensure Java is properly configured
+            echo "☕ Verifying Java installation..."
+            java -version
+            export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-11-openjdk-amd64}
+            
+            # Try to download a working version with better extraction
             if wget --timeout=30 "https://repo1.maven.org/maven2/net/sourceforge/pmd/pmd-dist/6.55.0/pmd-dist-6.55.0-bin.zip" 2>/dev/null; then
-              unzip pmd-dist-6.55.0-bin.zip
-              sudo mv pmd-bin-6.55.0 /opt/pmd
+              unzip -q pmd-dist-6.55.0-bin.zip
+              sudo mv pmd-bin-6.55.0 /opt/pmd_temp
+              sudo cp -r /opt/pmd_temp/* /opt/pmd/
+              sudo rm -rf /opt/pmd_temp
+              
+              # Make sure the PMD script is executable and has proper Java path
+              sudo chmod +x /opt/pmd/bin/pmd
+              
+              # Create a wrapper script that ensures proper Java execution
+              sudo tee /opt/pmd/bin/pmd_wrapper << 'EOF'
+#!/bin/bash
+export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-11-openjdk-amd64}
+export PATH=$JAVA_HOME/bin:$PATH
+exec /opt/pmd/bin/pmd "$@"
+EOF
+              sudo chmod +x /opt/pmd/bin/pmd_wrapper
+              sudo ln -sf /opt/pmd/bin/pmd_wrapper /opt/homebrew/bin/pmd
+              
               SUCCESS=true
             else
               echo "❌ All PMD installation methods failed"
