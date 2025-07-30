@@ -15,9 +15,9 @@ lxml==6.0.0
 
 
 # Additional utilities
-pathlib2==2.3.7
+pathlib2==2.3.7  # Note: Only needed for Python < 3.4 (can be removed for modern Python)
 dataclasses-json==0.6.1
-typing-extensions==4.8.0 
+typing-extensions>=4.9.0  # Required by python-pptx 1.0.2 
 
 # HTTP requests (if needed for future features)
 requests==2.32.4
@@ -34,4 +34,4 @@ python-dateutil==2.9.0
 python-pptx==1.0.2
 
 # Time zone handling
-pytz==2025.2 
+pytz==2025.2
