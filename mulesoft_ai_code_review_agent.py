@@ -304,8 +304,21 @@ class MuleSoftCodeReviewAgent:
         # Build PMD command with MuleSoft-specific file types
         file_list_path = self._create_file_list()
         
+        # Try multiple PMD paths (same as check_pmd_installation)
+        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd']
+        pmd_executable = None
+        
+        for pmd_path in pmd_paths:
+            if os.path.exists(pmd_path):
+                pmd_executable = pmd_path
+                logger.info(f"Using PMD executable: {pmd_executable}")
+                break
+        
+        if not pmd_executable:
+            raise RuntimeError("PMD executable not found at expected locations")
+        
         cmd = [
-            '/opt/homebrew/bin/pmd', 'check',
+            pmd_executable, 'check',
             '--file-list', file_list_path,
             '--rulesets', str(self.ruleset_path),
             '--format', 'xml',
@@ -314,7 +327,7 @@ class MuleSoftCodeReviewAgent:
             '--encoding', 'UTF-8'
         ]
         
-        logger.info(f"Running PMD analysis...")
+        logger.info(f"Running PMD analysis with command: {' '.join(cmd[:3])}...")
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -325,6 +338,29 @@ class MuleSoftCodeReviewAgent:
             if result.stderr:
                 logger.info(f"PMD stderr: {result.stderr}")
             
+            # Check for specific Java classpath errors
+            if "Could not find or load main class" in result.stderr:
+                logger.warning("PMD Java classpath issue detected, trying alternative PMD path and approach")
+                
+                # Try the other PMD executable if available
+                alternative_paths = [p for p in pmd_paths if p != pmd_executable and os.path.exists(p)]
+                if alternative_paths:
+                    logger.info(f"Trying alternative PMD executable: {alternative_paths[0]}")
+                    alt_cmd = cmd.copy()
+                    alt_cmd[0] = alternative_paths[0]
+                    
+                    try:
+                        alt_result = subprocess.run(alt_cmd, capture_output=True, text=True, timeout=300)
+                        if alt_result.returncode in [0, 4] and alt_result.stdout.strip():
+                            logger.info("✅ Alternative PMD executable worked")
+                            return alt_result.stdout, duration
+                    except Exception as e:
+                        logger.warning(f"Alternative PMD executable also failed: {e}")
+                
+                # If both PMD executables fail, fall back to alternative analysis
+                logger.warning("Both PMD executables failed, using alternative analysis")
+                return self._run_alternative_analysis(), duration
+            
             if result.returncode != 0 and result.returncode != 4:  # PMD returns 4 for violations
                 logger.error(f"PMD command failed: {result.stderr}")
                 # Check if it's a ruleset error
@@ -332,7 +368,9 @@ class MuleSoftCodeReviewAgent:
                     logger.warning("PMD ruleset has errors, trying alternative analysis")
                     return self._run_alternative_analysis(), duration
                 else:
-                    raise RuntimeError(f"PMD analysis failed: {result.stderr}")
+                    # For other errors, also try alternative analysis instead of failing
+                    logger.warning(f"PMD failed with error, trying alternative analysis: {result.stderr}")
+                    return self._run_alternative_analysis(), duration
             
             # If no output, try alternative approach
             if not result.stdout.strip():
