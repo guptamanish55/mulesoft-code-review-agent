@@ -124,9 +124,50 @@ jobs:
         wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F6.55.0/pmd-bin-6.55.0.zip"
         unzip pmd-bin-6.55.0.zip
         
+        # Check what was actually extracted
+        echo "🔍 Checking extracted PMD structure..."
+        ls -la pmd-bin-6.55.0/ || echo "PMD extraction directory not found"
+        
         # Install to standard location
         sudo mv pmd-bin-6.55.0 /opt/pmd
-        sudo chmod +x /opt/pmd/bin/pmd
+        
+        # Check the actual PMD structure after moving
+        echo "🔍 PMD directory structure:"
+        ls -la /opt/pmd/
+        ls -la /opt/pmd/bin/ 2>/dev/null || echo "No bin directory found"
+        
+        # Find the actual PMD executable
+        PMD_EXECUTABLE=""
+        if [ -f "/opt/pmd/bin/pmd" ]; then
+          PMD_EXECUTABLE="/opt/pmd/bin/pmd"
+        elif [ -f "/opt/pmd/bin/run.sh" ]; then
+          PMD_EXECUTABLE="/opt/pmd/bin/run.sh"
+        elif [ -f "/opt/pmd/pmd" ]; then
+          PMD_EXECUTABLE="/opt/pmd/pmd"
+        else
+          echo "🔍 Searching for PMD executable..."
+          PMD_EXECUTABLE=$(find /opt/pmd -name "pmd" -type f -executable 2>/dev/null | head -1)
+          if [ -z "$PMD_EXECUTABLE" ]; then
+            PMD_EXECUTABLE=$(find /opt/pmd -name "run.sh" -type f 2>/dev/null | head -1)
+          fi
+        fi
+        
+        if [ -n "$PMD_EXECUTABLE" ]; then
+          echo "✅ Found PMD executable at: $PMD_EXECUTABLE"
+          sudo chmod +x "$PMD_EXECUTABLE"
+          
+          # Create standard path if it doesn't exist
+          if [ "$PMD_EXECUTABLE" != "/opt/pmd/bin/pmd" ]; then
+            sudo mkdir -p /opt/pmd/bin
+            sudo ln -sf "$PMD_EXECUTABLE" /opt/pmd/bin/pmd
+            echo "🔗 Created symlink: /opt/pmd/bin/pmd -> $PMD_EXECUTABLE"
+          fi
+        else
+          echo "❌ PMD executable not found anywhere in /opt/pmd"
+          echo "🔍 Complete directory listing:"
+          find /opt/pmd -type f 2>/dev/null || echo "No files found"
+          exit 1
+        fi
         
         # Verify Java setup
         echo "☕ Java configuration:"
@@ -136,15 +177,15 @@ jobs:
         # Test PMD installation immediately
         echo "🧪 Testing PMD installation..."
         if /opt/pmd/bin/pmd check --help >/dev/null 2>&1; then
-          echo "✅ PMD installed and working correctly"
+          echo "✅ PMD installed and working correctly (check command)"
         elif /opt/pmd/bin/pmd --version >/dev/null 2>&1; then
-          echo "✅ PMD installed (legacy version format)"
+          echo "✅ PMD installed and working (version command)"
+        elif /opt/pmd/bin/pmd -h >/dev/null 2>&1; then
+          echo "✅ PMD installed and working (help command)"
         else
           echo "❌ PMD installation test failed"
-          echo "🔍 PMD directory contents:"
-          ls -la /opt/pmd/bin/ || echo "PMD bin directory not found"
-          echo "🔍 Java classpath test:"
-          /opt/pmd/bin/pmd check --help 2>&1 | head -5 || echo "PMD execution failed"
+          echo "🔍 Trying to run PMD for diagnostics:"
+          /opt/pmd/bin/pmd 2>&1 | head -5 || echo "PMD execution completely failed"
         fi
         
         # Create expected paths for Mule Guardian compatibility
@@ -156,6 +197,11 @@ jobs:
         echo "/opt/pmd/bin" >> $GITHUB_PATH
         echo "/opt/homebrew/bin" >> $GITHUB_PATH
         export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
+        
+        # Final verification
+        echo "🔍 Final PMD installation verification:"
+        ls -la /opt/pmd/bin/pmd || echo "Main PMD path missing"
+        ls -la /opt/homebrew/bin/pmd || echo "Homebrew PMD path missing"
         
         echo "✅ PMD installation completed successfully"
         echo "📍 PMD available at: /opt/pmd/bin/pmd"
