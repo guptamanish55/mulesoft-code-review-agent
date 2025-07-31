@@ -215,27 +215,32 @@ jobs:
           JAVA_HOME="$JAVA_HOME" java -cp "/opt/pmd/lib/*" net.sourceforge.pmd.PMD --help 2>&1 | head -5 || echo "Direct Java execution failed"
         fi
         
-        # Create a PMD wrapper script with proper Java environment
-        echo "🔗 Creating PMD wrapper with Java environment..."
-        echo '#!/bin/bash' | sudo tee /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo '# PMD Wrapper Script with Java Environment Setup' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo '' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo '# Ensure Java environment is set' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo 'if [ -z "$JAVA_HOME" ]; then' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo '    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo 'fi' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo 'export PATH="$JAVA_HOME/bin:$PATH"' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo '' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo '# Execute PMD with proper environment' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
-        echo 'exec /opt/pmd/bin/pmd "$@"' | sudo tee -a /opt/pmd/bin/pmd-wrapper > /dev/null
+        # Create bulletproof PMD execution script that bypasses shell script issues
+        echo "🔗 Creating bulletproof PMD execution script..."
+        echo '#!/bin/bash' | sudo tee /opt/pmd/bin/pmd-direct > /dev/null
+        echo '# Bulletproof PMD Execution - Direct Java Call' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo '' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo '# Set up robust Java environment' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo 'if [ -z "$JAVA_HOME" ]; then' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo '    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo 'fi' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo 'export PATH="$JAVA_HOME/bin:$PATH"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo '' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo '# Execute PMD directly via Java with explicit classpath' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo 'PMD_LIB="/opt/pmd/lib"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo 'CLASSPATH="$PMD_LIB/*"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo '' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo '# Direct Java execution bypassing PMD shell script' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
+        echo 'exec "$JAVA_HOME/bin/java" -cp "$CLASSPATH" net.sourceforge.pmd.PMD "$@"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
         
-        sudo chmod +x /opt/pmd/bin/pmd-wrapper
+        sudo chmod +x /opt/pmd/bin/pmd-direct
         
-        # Create expected paths for Mule Guardian compatibility
-        echo "🔗 Setting up PMD paths for Mule Guardian..."
+        # Create expected paths for Mule Guardian compatibility with direct execution
+        echo "🔗 Setting up PMD paths for Mule Guardian with direct execution..."
         sudo mkdir -p /opt/homebrew/bin
-        sudo ln -sf /opt/pmd/bin/pmd-wrapper /opt/homebrew/bin/pmd
-        sudo ln -sf /opt/pmd/bin/pmd-wrapper /opt/pmd/bin/pmd-safe
+        sudo ln -sf /opt/pmd/bin/pmd-direct /opt/homebrew/bin/pmd
+        sudo ln -sf /opt/pmd/bin/pmd-direct /opt/pmd/bin/pmd-safe
+        sudo ln -sf /opt/pmd/bin/pmd-direct /opt/pmd/bin/pmd-wrapper
         
         # Add to PATH
         echo "/opt/pmd/bin" >> $GITHUB_PATH
@@ -248,22 +253,30 @@ jobs:
         ls -la /opt/pmd/bin/pmd-wrapper || echo "PMD wrapper missing"
         ls -la /opt/homebrew/bin/pmd || echo "Homebrew PMD path missing"
         
-        # Test the wrapper script
-        echo "🧪 Testing PMD wrapper script..."
+        # Test the direct execution script
+        echo "🧪 Testing PMD direct execution script..."
         if /opt/homebrew/bin/pmd --version >/dev/null 2>&1; then
-          echo "✅ PMD wrapper working correctly"
+          echo "✅ PMD direct execution working correctly"
         elif /opt/homebrew/bin/pmd -h >/dev/null 2>&1; then
-          echo "✅ PMD wrapper working (help command)"
+          echo "✅ PMD direct execution working (help command)"
         else
-          echo "⚠️ PMD wrapper test failed - will rely on fallback mechanisms"
-          echo "🔍 Wrapper test output:"
-          /opt/homebrew/bin/pmd 2>&1 | head -5 || echo "Wrapper execution failed"
+          echo "🔍 Testing direct Java execution of PMD..."
+          echo "🔍 Java version: $(java -version 2>&1 | head -1)"
+          echo "🔍 JAVA_HOME: $JAVA_HOME"
+          echo "🔍 PMD lib directory:"
+          ls -la /opt/pmd/lib/ | head -5 || echo "PMD lib directory not found"
+          
+          echo "🔍 Direct PMD execution test:"
+          /opt/homebrew/bin/pmd 2>&1 | head -10 || echo "Direct execution failed"
+          
+          echo "🔍 Manual Java classpath test:"
+          java -cp "/opt/pmd/lib/*" net.sourceforge.pmd.PMD --help 2>&1 | head -5 || echo "Manual Java execution failed"
         fi
         
-        echo "✅ PMD installation completed"
-        echo "📍 PMD wrapper at: /opt/pmd/bin/pmd-wrapper"
+        echo "✅ PMD installation completed with direct execution"
+        echo "📍 PMD direct script at: /opt/pmd/bin/pmd-direct"
         echo "📍 PMD symlink at: /opt/homebrew/bin/pmd"
-        echo "📍 Java-safe PMD at: /opt/pmd/bin/pmd-safe"
+        echo "📍 All PMD paths use direct Java execution"
         
     # Step 7: Install Python Dependencies
     - name: Install Python Dependencies
