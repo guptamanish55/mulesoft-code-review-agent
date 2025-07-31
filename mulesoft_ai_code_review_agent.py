@@ -1369,13 +1369,26 @@ class MuleSoftCodeReviewAgent:
     
     def save_report_json(self, report: CodeReviewReport, output_path: str):
         """Save report as JSON"""
+        logger.info(f"🔍 SAVING JSON REPORT:")
+        logger.info(f"🔍   Total violations: {report.total_violations}")
+        logger.info(f"🔍   Compliance percentage: {report.compliance_percentage}")
+        logger.info(f"🔍   Output path: {output_path}")
+        
         report_dict = asdict(report)
         # Convert Priority enum to string for JSON serialization
         for violation in report_dict['violations']:
             violation['priority'] = violation['priority'].name
         
+        # Log key fields to ensure they're correct
+        logger.info(f"🔍 JSON REPORT DICT:")
+        logger.info(f"🔍   compliance_percentage: {report_dict['compliance_percentage']}")
+        logger.info(f"🔍   total_violations: {report_dict['total_violations']}")
+        logger.info(f"🔍   violations_by_priority: {report_dict['violations_by_priority']}")
+        
         with open(output_path, 'w') as f:
             json.dump(report_dict, f, indent=2)
+            
+        logger.info(f"✅ JSON report saved successfully to {output_path}")
     
     def run_review(self, output_path: Optional[str] = None, analysis_mode: str = 'comprehensive', priority_filter: str = 'all') -> CodeReviewReport:
         """Run complete code review process with advanced options"""
