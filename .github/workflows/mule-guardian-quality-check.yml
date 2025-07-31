@@ -332,7 +332,33 @@ jobs:
         echo "🧪 ANALYSIS METHOD VERIFICATION:"
         if grep -q "SUCCESS: Using FULL PMD analysis" analysis_output.log 2>/dev/null; then
           echo "✅ CONFIRMED: Full PMD analysis with comprehensive ruleset was used"
-          echo "📊 This provides the most accurate compliance score"
+          
+          # Check if PMD actually found violations
+          VIOLATIONS_FOUND=$(grep -o "Violations found: [0-9]*" analysis_output.log 2>/dev/null | grep -o "[0-9]*" || echo "unknown")
+          FILES_ANALYZED=$(grep -o "XML files analyzed: [0-9]*" analysis_output.log 2>/dev/null | grep -o "[0-9]*" || echo "unknown")
+          
+          echo "📊 PMD Analysis Details:"
+          echo "   - Files analyzed: $FILES_ANALYZED"
+          echo "   - Violations found: $VIOLATIONS_FOUND"
+          
+          if [ "$VIOLATIONS_FOUND" = "0" ]; then
+            echo ""
+            echo "🚨 CRITICAL WARNING: PMD found 0 violations!"
+            echo "🚨 This results in 100% compliance which contradicts UI (28%)"
+            echo "🚨 Possible causes:"
+            echo "   - PMD is not analyzing the right files"
+            echo "   - Ruleset is not effective for this project type"
+            echo "   - PMD rules are not matching the code patterns"
+            echo "🚨 The UI compliance score (28%) is likely more accurate"
+            echo ""
+            echo "🔍 Check the logs above for:"
+            echo "   - 'PROJECT ANALYSIS' section showing files found"
+            echo "   - 'PMD OUTPUT ANALYSIS' section showing what PMD processed"
+            echo "   - 'Ruleset preview' to verify rules are loaded"
+          elif [ "$VIOLATIONS_FOUND" != "unknown" ] && [ "$VIOLATIONS_FOUND" -gt "0" ]; then
+            echo "✅ PMD found $VIOLATIONS_FOUND violations - this should provide accurate compliance score"
+          fi
+          
         elif grep -q "ALTERNATIVE analysis" analysis_output.log 2>/dev/null; then
           echo "🚨 WARNING: Alternative analysis was used instead of PMD!"
           echo "🚨 This results in HIGHER compliance scores than the UI"
@@ -402,7 +428,7 @@ jobs:
         echo "   - Required Threshold: $THRESHOLD%"
         echo "   - Skip Quality Gate: $SKIP_GATE"
         
-        # Check if alternative analysis was used and warn
+        # Check for misleading compliance scores
         if grep -q "ALTERNATIVE analysis" analysis_output.log 2>/dev/null; then
           echo ""
           echo "🚨 CRITICAL WARNING: Alternative analysis was used!"
@@ -410,6 +436,20 @@ jobs:
           echo "🚨 The UI compliance score (28%) is likely more accurate"
           echo "🚨 PMD analysis failed - please fix PMD installation issues"
           echo ""
+        elif grep -q "PMD found 0 violations" analysis_output.log 2>/dev/null; then
+          echo ""
+          echo "🚨 CRITICAL WARNING: PMD found 0 violations resulting in misleading 100% compliance!"
+          echo "🚨 This contradicts the UI which shows 28% compliance"
+          echo "🚨 PMD may not be analyzing the right files or using effective rules"
+          echo "🚨 Check the detailed logs above for diagnosis"
+          echo ""
+          
+          # Option to fail the workflow for misleading PMD results
+          if [ "${{ inputs.require_pmd }}" = "true" ]; then
+            echo "💥 FAILING WORKFLOW: PMD found 0 violations which is inconsistent with expected results"
+            echo "💡 This prevents misleading high compliance scores"
+            exit 1
+          fi
         fi
         
         if [ "$SKIP_GATE" = "true" ]; then
