@@ -538,6 +538,8 @@ class MuleSoftCodeReviewAgent:
             
             logger.info("✅ SUCCESS: Using FULL PMD analysis with comprehensive ruleset")
             logger.info(f"✅ PMD analysis completed successfully - using comprehensive rules")
+            logger.info(f"🔍 PMD XML output size: {len(result.stdout)} characters")
+            logger.info("🔍 Now parsing XML to extract violations...")
             return result.stdout, duration
             
         except subprocess.TimeoutExpired:
@@ -860,22 +862,62 @@ class MuleSoftCodeReviewAgent:
         """Parse PMD XML output into Violation objects with precise line targeting"""
         violations = []
         
-        logger.info(f"Parsing PMD XML output...")
-        ns = {'pmd': 'http://pmd.sourceforge.net/report/2.0.0'}
+        logger.info(f"🔍 PARSING PMD XML OUTPUT...")
+        logger.info(f"🔍 XML output length: {len(xml_output)} characters")
+        logger.info(f"🔍 XML preview: {xml_output[:1000]}...")
         
         try:
             root = ET.fromstring(xml_output)
+            logger.info(f"🔍 XML root tag: {root.tag}")
+            logger.info(f"🔍 XML root attributes: {root.attrib}")
             
-            # Count file elements
-            file_elements = root.findall('.//pmd:file', ns)
+            # Try multiple approaches to find file elements (PMD 6.x vs 7.x namespace differences)
+            ns_variants = [
+                {'pmd': 'http://pmd.sourceforge.net/report/2.0.0'},  # PMD 7.x
+                {},  # No namespace (PMD 6.x often has no namespace)
+            ]
+            
+            file_elements = []
+            for ns in ns_variants:
+                if ns:
+                    file_elements = root.findall('.//pmd:file', ns)
+                    logger.info(f"🔍 Trying namespace {ns}: found {len(file_elements)} file elements")
+                else:
+                    file_elements = root.findall('.//file')  # No namespace
+                    logger.info(f"🔍 Trying no namespace: found {len(file_elements)} file elements")
+                
+                if file_elements:
+                    logger.info(f"✅ Found {len(file_elements)} files using namespace: {ns}")
+                    break
+            
+            if not file_elements:
+                logger.error("🚨 NO FILE ELEMENTS FOUND IN PMD XML!")
+                logger.error(f"🚨 Available tags in XML: {[elem.tag for elem in root.iter()][:10]}")
+                return violations
             
             for file_elem in file_elements:
                 file_path = file_elem.get('name', '')
                 # Clean file path to remove temporary directory prefix
                 clean_file_path = self._clean_file_path(file_path)
                 
-                # Count violation elements per file
-                violation_elements = file_elem.findall('.//pmd:violation', ns)
+                logger.info(f"🔍 Processing file: {clean_file_path}")
+                
+                # Find violation elements with namespace flexibility
+                violation_elements = []
+                for ns in ns_variants:
+                    if ns:
+                        violation_elements = file_elem.findall('.//pmd:violation', ns)
+                    else:
+                        violation_elements = file_elem.findall('.//violation')  # No namespace
+                    
+                    if violation_elements:
+                        logger.info(f"🔍 Found {len(violation_elements)} violations in {clean_file_path} using namespace: {ns}")
+                        break
+                
+                if not violation_elements:
+                    logger.warning(f"🚨 No violations found in file {clean_file_path}")
+                    logger.warning(f"🚨 Available child tags: {[child.tag for child in file_elem]}")
+                    continue
                 
                 for violation_elem in violation_elements:
                     rule = violation_elem.get('rule', 'Unknown')
@@ -920,12 +962,23 @@ class MuleSoftCodeReviewAgent:
                     )
                     violations.append(violation)
                     
-                                    # Log precise violation details for debugging
-                logger.info(f"Violation: {rule} at line {line}:{column} in {clean_file_path}")
-                    
+                    # Log precise violation details for debugging
+                    logger.debug(f"Parsed violation: {rule} at line {line}:{column} in {clean_file_path}")
+            
+            logger.info(f"🔍 PARSING COMPLETE:")
+            logger.info(f"🔍 Total violations parsed: {len(violations)}")
+            logger.info(f"🔍 Files with violations: {len(file_elements)}")
+            
+            if len(violations) == 0:
+                logger.error("🚨 CRITICAL: Parsed 0 violations from PMD XML!")
+                logger.error("🚨 But PMD output analysis showed violations were found!")
+                logger.error("🚨 This is a namespace/parsing bug!")
+                
         except ET.ParseError as e:
             logger.error(f"Failed to parse PMD XML output: {e}")
+            logger.error(f"🚨 XML content causing parse error: {xml_output[:2000]}")
             raise RuntimeError(f"Invalid PMD XML output: {e}")
+            
         return violations
     
     def _clean_file_path(self, file_path: str) -> str:
@@ -1335,8 +1388,19 @@ class MuleSoftCodeReviewAgent:
         # Run PMD analysis
         xml_output, scan_duration = self.run_pmd_analysis()
         
+        logger.info(f"🔍 STARTING XML PARSING OF PMD OUTPUT...")
+        logger.info(f"🔍 XML output received: {len(xml_output)} characters")
+        
         # Parse results
         violations = self.parse_pmd_xml_output(xml_output)
+        
+        logger.info(f"🔍 XML PARSING RESULT:")
+        logger.info(f"🔍 Total violations extracted: {len(violations)}")
+        
+        if len(violations) == 0:
+            logger.error("🚨 CRITICAL ISSUE: XML parsing returned 0 violations!")
+            logger.error("🚨 This explains why compliance is 100% instead of ~28%!")
+            logger.error("🚨 Check the parsing logs above for namespace/XML structure issues!")
         
         # Apply priority filter
         if priority_filter != 'all':
