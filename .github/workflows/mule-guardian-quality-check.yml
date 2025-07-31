@@ -316,9 +316,16 @@ jobs:
           echo "This might not be a MuleSoft project or files are in a different location."
         fi
         
+        # Clear Python cache to ensure fresh execution
+        echo "🧹 Clearing Python cache to ensure latest code is used..."
+        find . -name "*.pyc" -delete
+        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+        
         # Run the analysis and capture output
-        echo "🔍 Starting Mule Guardian analysis..."
-        python mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
+        echo "🔍 Starting Mule Guardian analysis with FRESH Python execution..."
+        echo "🚀 EXPECTED: Should see 'PMD 6.x FORMAT' messages and NO 'check --file-list' errors"
+        echo "🚀 If you still see 'check --file-list' errors, there's a deployment issue"
+        python -B mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
         
         # Check what type of analysis was actually used
         echo ""
