@@ -97,7 +97,7 @@ class MuleSoftCodeReviewAgent:
         """Check if PMD is installed and accessible"""
         # Try multiple PMD paths and command formats
         pmd_paths = ['/opt/pmd/bin/pmd-bulletproof', '/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-direct', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd']
-        version_commands = ['--version', '-v', 'check --version']
+        version_commands = ['--version', '-v', '-version']  # PMD 6.x compatible
         
         for pmd_path in pmd_paths:
             if not os.path.exists(pmd_path):
@@ -298,11 +298,8 @@ class MuleSoftCodeReviewAgent:
         """Run PMD analysis and return results"""
         start_time = datetime.now()
         
-        # Create exclusions file
+        # Create exclusions file for PMD 6.x (uses different approach than file lists)
         exclusions_file = self.create_pmd_exclusions_file()
-        
-        # Build PMD command with MuleSoft-specific file types
-        file_list_path = self._create_file_list()
         
         # Try multiple PMD paths (same as check_pmd_installation)
         pmd_paths = ['/opt/pmd/bin/pmd-bulletproof', '/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-direct', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd']
@@ -317,14 +314,14 @@ class MuleSoftCodeReviewAgent:
         if not pmd_executable:
             raise RuntimeError("PMD executable not found at expected locations")
         
+        # PMD 6.x command format (different from PMD 7.x)
         cmd = [
-            pmd_executable, 'check',
-            '--file-list', file_list_path,
-            '--rulesets', str(self.ruleset_path),
-            '--format', 'xml',
-            '--no-cache',
-            '--suppress-marker', 'PMD.SuppressWarnings',
-            '--encoding', 'UTF-8'
+            pmd_executable,
+            '-d', str(self.project_path),  # Directory to analyze
+            '-R', str(self.ruleset_path),  # Ruleset
+            '-f', 'xml',                   # Format
+            '-cache', '/tmp/pmd-cache',    # Cache location
+            '-encoding', 'UTF-8'
         ]
         
         logger.info(f"Running PMD analysis with command: {' '.join(cmd[:3])}...")
@@ -397,15 +394,15 @@ class MuleSoftCodeReviewAgent:
                         for main_class in main_classes:
                             logger.info(f"Trying direct Java execution with main class: {main_class}")
                             
+                            # PMD 6.x direct Java command format
                             java_cmd = [
                                 'java', '-cp', f'{pmd_lib_path}/*',
-                                main_class, 'check',
-                                '--file-list', file_list_path,
-                                '--rulesets', str(self.ruleset_path),
-                                '--format', 'xml',
-                                '--no-cache',
-                                '--suppress-marker', 'PMD.SuppressWarnings',
-                                '--encoding', 'UTF-8'
+                                main_class,
+                                '-d', str(self.project_path),  # Directory to analyze
+                                '-R', str(self.ruleset_path),  # Ruleset
+                                '-f', 'xml',                   # Format
+                                '-cache', '/tmp/pmd-cache',    # Cache location
+                                '-encoding', 'UTF-8'
                             ]
                             
                             try:
