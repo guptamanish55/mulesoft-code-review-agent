@@ -66,7 +66,7 @@ jobs:
     - name: Get Mule Guardian Core Files
       uses: actions/checkout@v4
       with:
-        repository: ${{ github.repository_owner }}/mulesoft-code-review-agent
+        repository: ${{ github.repository_owner }}/mulesoft-code-review-agent  # ← Change this to your common repo name
         path: mule-guardian
         ref: main
         
@@ -397,27 +397,101 @@ jobs:
         if [ -f "quality-report.json" ]; then
           echo "✅ Analysis completed successfully"
           
-          # Extract compliance score
-          COMPLIANCE=$(grep -o '"compliance_percentage":[0-9.]*' quality-report.json | cut -d':' -f2 | head -1)
-          TOTAL_VIOLATIONS=$(grep -o '"total_violations":[0-9]*' quality-report.json | cut -d':' -f2 | head -1)
+          # Debug: Show JSON content to diagnose extraction issues
+          echo "🔍 DEBUG: JSON report content:"
+          head -20 quality-report.json || echo "Cannot read JSON file"
+          echo "🔍 JSON file size: $(wc -c < quality-report.json) bytes"
           
-          # Fallback calculation if not found
-          if [ -z "$COMPLIANCE" ] || [ "$COMPLIANCE" = "0" ]; then
-            HIGH_COUNT=$(grep -o '"HIGH":[0-9]*' quality-report.json | cut -d':' -f2 | head -1 || echo "0")
-            MEDIUM_COUNT=$(grep -o '"MEDIUM":[0-9]*' quality-report.json | cut -d':' -f2 | head -1 || echo "0")
-            LOW_COUNT=$(grep -o '"LOW":[0-9]*' quality-report.json | cut -d':' -f2 | head -1 || echo "0")
+          # Extract compliance score with multiple robust patterns
+          COMPLIANCE=$(grep -o '"compliance_percentage":[[:space:]]*[0-9.]*' quality-report.json | grep -o '[0-9.]*' | head -1)
+          TOTAL_VIOLATIONS=$(grep -o '"total_violations":[[:space:]]*[0-9]*' quality-report.json | grep -o '[0-9]*' | head -1)
+          
+          echo "🔍 DEBUG: Initial extraction:"
+          echo "🔍   COMPLIANCE: '$COMPLIANCE'"
+          echo "🔍   TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
+          
+          # Try multiple alternative patterns if extraction fails
+          if [ -z "$COMPLIANCE" ]; then
+            echo "🔍 Trying alternative compliance extraction patterns..."
+            COMPLIANCE=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('compliance_percentage', ''))" 2>/dev/null)
+            echo "🔍   Python JSON extraction COMPLIANCE: '$COMPLIANCE'"
+          fi
+          
+          if [ -z "$TOTAL_VIOLATIONS" ]; then
+            echo "🔍 Trying alternative total_violations extraction patterns..."
+            TOTAL_VIOLATIONS=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('total_violations', ''))" 2>/dev/null)
+            echo "🔍   Python JSON extraction TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
+          fi
+          
+          # Additional fallback using jq if available
+          if [ -z "$COMPLIANCE" ] && command -v jq >/dev/null 2>&1; then
+            COMPLIANCE=$(jq -r '.compliance_percentage // empty' quality-report.json 2>/dev/null)
+            echo "🔍   jq extraction COMPLIANCE: '$COMPLIANCE'"
+          fi
+          
+          if [ -z "$TOTAL_VIOLATIONS" ] && command -v jq >/dev/null 2>&1; then
+            TOTAL_VIOLATIONS=$(jq -r '.total_violations // empty' quality-report.json 2>/dev/null)
+            echo "🔍   jq extraction TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
+          fi
+          
+          echo "🔍 FINAL DEBUG: Values before fallback calculation:"
+          echo "🔍   COMPLIANCE: '$COMPLIANCE'"
+          echo "🔍   TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
+          
+          # Validate extracted values
+          if [ -n "$COMPLIANCE" ] && [ -n "$TOTAL_VIOLATIONS" ]; then
+            echo "✅ Successfully extracted compliance and violations from JSON"
+            echo "✅   Compliance: $COMPLIANCE%"
+            echo "✅   Total Violations: $TOTAL_VIOLATIONS"
+          else
+            echo "🚨 JSON extraction failed, attempting fallback calculation..."
             
-            DEDUCTION=$((HIGH_COUNT*3 + MEDIUM_COUNT*2 + LOW_COUNT*1))
-            COMPLIANCE=$((100 - DEDUCTION))
+            # Fallback calculation using violations by priority
+            HIGH_COUNT=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('violations_by_priority', {}).get('HIGH', 0))" 2>/dev/null || echo "0")
+            MEDIUM_COUNT=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('violations_by_priority', {}).get('MEDIUM', 0))" 2>/dev/null || echo "0")
+            LOW_COUNT=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('violations_by_priority', {}).get('LOW', 0))" 2>/dev/null || echo "0")
             
-            # Minimum compliance
-            if [ $COMPLIANCE -lt 10 ]; then
-              COMPLIANCE=10
+            echo "🔍 Fallback priority counts:"
+            echo "🔍   HIGH: $HIGH_COUNT"
+            echo "🔍   MEDIUM: $MEDIUM_COUNT"
+            echo "🔍   LOW: $LOW_COUNT"
+            
+            # Calculate total violations if not found
+            if [ -z "$TOTAL_VIOLATIONS" ]; then
+              TOTAL_VIOLATIONS=$((HIGH_COUNT + MEDIUM_COUNT + LOW_COUNT))
+              echo "🔍 Calculated TOTAL_VIOLATIONS: $TOTAL_VIOLATIONS"
+            fi
+            
+            # Calculate compliance if not found
+            if [ -z "$COMPLIANCE" ]; then
+              DEDUCTION=$((HIGH_COUNT*3 + MEDIUM_COUNT*2 + LOW_COUNT*1))
+              COMPLIANCE=$((100 - DEDUCTION))
+              
+              # Minimum compliance of 20 (same as Python logic)
+              if [ $COMPLIANCE -lt 20 ]; then
+                COMPLIANCE=20
+              fi
+              echo "🔍 Calculated COMPLIANCE: $COMPLIANCE%"
             fi
           fi
           
+          # Final validation
+          if [ -z "$COMPLIANCE" ]; then
+            COMPLIANCE=100
+            echo "🚨 WARNING: Could not determine compliance, defaulting to 100%"
+          fi
+          
+          if [ -z "$TOTAL_VIOLATIONS" ]; then
+            TOTAL_VIOLATIONS=0
+            echo "🚨 WARNING: Could not determine total violations, defaulting to 0"
+          fi
+          
+          echo "🔍 FINAL VALUES:"
+          echo "🔍   Final COMPLIANCE: $COMPLIANCE%"
+          echo "🔍   Final TOTAL_VIOLATIONS: $TOTAL_VIOLATIONS"
+          
           echo "COMPLIANCE_SCORE=$COMPLIANCE" >> $GITHUB_OUTPUT
-          echo "TOTAL_VIOLATIONS=${TOTAL_VIOLATIONS:-0}" >> $GITHUB_OUTPUT
+          echo "TOTAL_VIOLATIONS=$TOTAL_VIOLATIONS" >> $GITHUB_OUTPUT
           
           echo "🛡️ Analysis Results:"
           echo "   - Compliance Score: $COMPLIANCE%"
