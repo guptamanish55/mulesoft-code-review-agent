@@ -96,7 +96,7 @@ class MuleSoftCodeReviewAgent:
     def check_pmd_installation(self) -> bool:
         """Check if PMD is installed and accessible"""
         # Try multiple PMD paths and command formats
-        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd']
+        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-direct', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd']
         version_commands = ['--version', '-v', 'check --version']
         
         for pmd_path in pmd_paths:
@@ -305,7 +305,7 @@ class MuleSoftCodeReviewAgent:
         file_list_path = self._create_file_list()
         
         # Try multiple PMD paths (same as check_pmd_installation)
-        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd']
+        pmd_paths = ['/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-direct', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd']
         pmd_executable = None
         
         for pmd_path in pmd_paths:
@@ -382,8 +382,39 @@ class MuleSoftCodeReviewAgent:
                     except Exception as e:
                         logger.error(f"Alternative PMD executable also failed: {e}")
                 
-                # If both PMD executables fail, fall back to alternative analysis
-                logger.error("🚨 CRITICAL: All PMD executables failed!")
+                # Final attempt: Direct Java execution with explicit classpath
+                logger.info("🔄 Final attempt: Direct Java execution with explicit classpath...")
+                try:
+                    pmd_lib_path = "/opt/pmd/lib"
+                    if os.path.exists(pmd_lib_path):
+                        java_cmd = [
+                            'java', '-cp', f'{pmd_lib_path}/*',
+                            'net.sourceforge.pmd.PMD', 'check',
+                            '--file-list', file_list_path,
+                            '--rulesets', str(self.ruleset_path),
+                            '--format', 'xml',
+                            '--no-cache',
+                            '--suppress-marker', 'PMD.SuppressWarnings',
+                            '--encoding', 'UTF-8'
+                        ]
+                        
+                        logger.info("Attempting direct Java execution of PMD...")
+                        direct_result = subprocess.run(java_cmd, capture_output=True, text=True, timeout=300, env=pmd_env)
+                        
+                        if direct_result.returncode in [0, 4] and direct_result.stdout.strip():
+                            logger.info("✅ SUCCESS: Direct Java PMD execution worked - using FULL PMD analysis")
+                            return direct_result.stdout, duration
+                        else:
+                            logger.error(f"Direct Java execution also failed: returncode={direct_result.returncode}")
+                            logger.error(f"Direct Java stderr: {direct_result.stderr}")
+                    else:
+                        logger.error(f"PMD lib directory not found: {pmd_lib_path}")
+                        
+                except Exception as e:
+                    logger.error(f"Direct Java execution failed with exception: {e}")
+                
+                # If all PMD approaches fail, fall back to alternative analysis
+                logger.error("🚨 CRITICAL: All PMD execution methods failed!")
                 logger.error("🚨 Falling back to LIMITED alternative analysis - this will show HIGHER compliance scores!")
                 return self._run_alternative_analysis(), duration
             
