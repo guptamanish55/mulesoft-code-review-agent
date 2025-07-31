@@ -332,6 +332,41 @@ class MuleSoftCodeReviewAgent:
         logger.info(f"🔍 Full command: {' '.join(cmd)}")
         logger.info("🚀 This should NOT contain 'check' or '--file-list'")
         
+        # Show what files PMD will analyze
+        logger.info(f"🔍 PROJECT ANALYSIS:")
+        logger.info(f"🔍 Project path: {self.project_path}")
+        logger.info(f"🔍 Ruleset path: {self.ruleset_path}")
+        
+        # Count files that would be analyzed
+        xml_files = list(self.project_path.glob('**/*.xml'))
+        java_files = list(self.project_path.glob('**/*.java'))
+        yaml_files = list(self.project_path.glob('**/*.yaml')) + list(self.project_path.glob('**/*.yml'))
+        
+        logger.info(f"🔍 Files in project:")
+        logger.info(f"🔍   XML files: {len(xml_files)}")
+        logger.info(f"🔍   Java files: {len(java_files)}")
+        logger.info(f"🔍   YAML files: {len(yaml_files)}")
+        
+        if xml_files:
+            logger.info(f"🔍 Sample XML files: {[f.name for f in xml_files[:3]]}")
+        
+        # Verify ruleset exists and show basic info
+        if self.ruleset_path.exists():
+            ruleset_size = self.ruleset_path.stat().st_size
+            logger.info(f"🔍 Ruleset file: {self.ruleset_path} ({ruleset_size} bytes)")
+            
+            # Read first few lines of ruleset to verify it's valid
+            try:
+                with open(self.ruleset_path, 'r') as f:
+                    ruleset_preview = f.read(300)
+                    rule_count = ruleset_preview.count('<rule ')
+                    logger.info(f"🔍 Ruleset preview (first 300 chars): {ruleset_preview}")
+                    logger.info(f"🔍 Approximate rule count in preview: {rule_count}")
+            except Exception as e:
+                logger.warning(f"🚨 Cannot read ruleset file: {e}")
+        else:
+            logger.error(f"🚨 Ruleset file does not exist: {self.ruleset_path}")
+        
         # SAFEGUARD: Ensure no wrong arguments are present
         cmd_str = ' '.join(cmd)
         if 'check' in cmd_str or '--file-list' in cmd_str:
@@ -366,8 +401,49 @@ class MuleSoftCodeReviewAgent:
             duration = (end_time - start_time).total_seconds()
             
             logger.info(f"PMD completed with return code: {result.returncode}")
+            logger.info(f"PMD stdout length: {len(result.stdout) if result.stdout else 0} characters")
+            logger.info(f"PMD stderr length: {len(result.stderr) if result.stderr else 0} characters")
+            
             if result.stderr:
                 logger.info(f"PMD stderr: {result.stderr}")
+            
+            # Enhanced analysis of PMD output
+            if result.stdout:
+                violation_count = result.stdout.count('<violation')
+                file_count = result.stdout.count('<file ')
+                logger.info(f"🔍 PMD OUTPUT ANALYSIS:")
+                logger.info(f"🔍 XML files analyzed: {file_count}")
+                logger.info(f"🔍 Violations found: {violation_count}")
+                logger.info(f"🔍 Output preview: {result.stdout[:500]}...")
+                
+                if violation_count == 0:
+                    logger.warning("🚨 PMD found 0 violations - this will result in 100% compliance!")
+                    logger.warning("🚨 This suggests PMD is not finding issues or ruleset is not effective")
+                    logger.warning(f"🚨 Project path analyzed: {self.project_path}")
+                    logger.warning(f"🚨 Ruleset used: {self.ruleset_path}")
+                    
+                    # Additional diagnostics for 0 violations
+                    if file_count == 0:
+                        logger.error("🚨 PMD analyzed 0 files! This is definitely wrong.")
+                        logger.error("🚨 PMD command may not be finding files in the specified directory")
+                    elif file_count > 0:
+                        logger.warning(f"🚨 PMD analyzed {file_count} files but found no violations")
+                        logger.warning("🚨 This could mean:")
+                        logger.warning("🚨   - Ruleset rules don't match the file types/patterns")
+                        logger.warning("🚨   - Files are valid according to the rules")
+                        logger.warning("🚨   - PMD version compatibility issues with ruleset")
+                        
+                        # Try to show which files were processed
+                        import re
+                        file_names = re.findall(r'<file[^>]+name="([^"]+)"', result.stdout)
+                        if file_names:
+                            logger.info(f"🔍 Files processed by PMD: {file_names[:5]}...")
+                        else:
+                            logger.warning("🚨 Could not extract file names from PMD output")
+                else:
+                    logger.info(f"✅ PMD found {violation_count} violations across {file_count} files")
+            else:
+                logger.warning("🚨 PMD returned empty output")
             
             # Check for specific Java classpath errors
             if "Could not find or load main class" in result.stderr:
