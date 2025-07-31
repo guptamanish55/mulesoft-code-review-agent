@@ -322,9 +322,10 @@ jobs:
         find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
         
         # Run the analysis and capture output
-        echo "🔍 Starting Mule Guardian analysis with FRESH Python execution..."
+        echo "🔍 Starting Mule Guardian analysis with ENHANCED DIAGNOSTICS..."
         echo "🚀 EXPECTED: Should see 'PMD 6.x FORMAT' messages and NO 'check --file-list' errors"
-        echo "🚀 If you still see 'check --file-list' errors, there's a deployment issue"
+        echo "🚀 EXPECTED: Should see 'PARSING PMD XML OUTPUT' and violation count logs"
+        echo "🚀 If you see 'Violations found: 180' but 'Total violations extracted: 0', it's a parsing bug"
         python -B mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
         
         # Check what type of analysis was actually used
@@ -336,10 +337,22 @@ jobs:
           # Check if PMD actually found violations
           VIOLATIONS_FOUND=$(grep -o "Violations found: [0-9]*" analysis_output.log 2>/dev/null | grep -o "[0-9]*" || echo "unknown")
           FILES_ANALYZED=$(grep -o "XML files analyzed: [0-9]*" analysis_output.log 2>/dev/null | grep -o "[0-9]*" || echo "unknown")
+          VIOLATIONS_PARSED=$(grep -o "Total violations extracted: [0-9]*" analysis_output.log 2>/dev/null | grep -o "[0-9]*" || echo "unknown")
           
           echo "📊 PMD Analysis Details:"
-          echo "   - Files analyzed: $FILES_ANALYZED"
-          echo "   - Violations found: $VIOLATIONS_FOUND"
+          echo "   - Files analyzed by PMD: $FILES_ANALYZED"
+          echo "   - Violations found by PMD: $VIOLATIONS_FOUND"
+          echo "   - Violations parsed from XML: $VIOLATIONS_PARSED"
+          
+          # Check for parsing discrepancy
+          if [ "$VIOLATIONS_FOUND" != "unknown" ] && [ "$VIOLATIONS_PARSED" != "unknown" ] && [ "$VIOLATIONS_FOUND" != "$VIOLATIONS_PARSED" ]; then
+            echo ""
+            echo "🚨 CRITICAL: XML PARSING BUG DETECTED!"
+            echo "🚨 PMD found $VIOLATIONS_FOUND violations but only $VIOLATIONS_PARSED were parsed!"
+            echo "🚨 This explains the 100% compliance score discrepancy!"
+            echo "🚨 Check logs for namespace/XML structure issues in parsing"
+            echo ""
+          fi
           
           if [ "$VIOLATIONS_FOUND" = "0" ]; then
             echo ""
