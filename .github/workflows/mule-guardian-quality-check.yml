@@ -198,13 +198,17 @@ jobs:
         
         sudo chmod +x /opt/pmd/bin/pmd-bulletproof
         
-        # Test the bulletproof script
+        # Test the bulletproof script with PMD 6.x compatible commands
         echo "🧪 Testing bulletproof PMD script..."
-        if /opt/pmd/bin/pmd-bulletproof --help >/dev/null 2>&1; then
+        if /opt/pmd/bin/pmd-bulletproof --version >/dev/null 2>&1; then
           echo "✅ BULLETPROOF PMD script working perfectly!"
+        elif /opt/pmd/bin/pmd-bulletproof -v >/dev/null 2>&1; then
+          echo "✅ BULLETPROOF PMD script working (with -v)!"
         else
           echo "🚨 Bulletproof script failed - showing error:"
-          /opt/pmd/bin/pmd-bulletproof --help 2>&1 | head -5
+          /opt/pmd/bin/pmd-bulletproof --version 2>&1 | head -5
+          echo "🧪 Trying alternative version check:"
+          /opt/pmd/bin/pmd-bulletproof -v 2>&1 | head -5
           exit 1
         fi
         
@@ -225,15 +229,18 @@ jobs:
         # Final comprehensive testing
         echo "🧪 FINAL BULLETPROOF PMD TESTING..."
         
-        # Test all paths
+        # Test all paths with PMD 6.x compatible commands
         PMD_PATHS=("/opt/homebrew/bin/pmd" "/opt/pmd/bin/pmd" "/opt/pmd/bin/pmd-bulletproof")
         for pmd_path in "${PMD_PATHS[@]}"; do
           echo "🧪 Testing: $pmd_path"
-          if "$pmd_path" --help >/dev/null 2>&1; then
-            echo "✅ $pmd_path - WORKING"
+          if "$pmd_path" --version >/dev/null 2>&1; then
+            echo "✅ $pmd_path - WORKING (--version)"
+          elif "$pmd_path" -v >/dev/null 2>&1; then
+            echo "✅ $pmd_path - WORKING (-v)"
           else
             echo "❌ $pmd_path - FAILED"
-            "$pmd_path" --help 2>&1 | head -3
+            echo "🔍 Error output:"
+            "$pmd_path" --version 2>&1 | head -3
           fi
         done
         
