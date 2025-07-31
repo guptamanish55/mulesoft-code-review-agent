@@ -104,179 +104,143 @@ jobs:
         distribution: 'temurin'
         java-version: '11'
         
-    # Step 6: Install PMD
-    - name: Install PMD
+    # Step 6: Install PMD with BULLETPROOF GUARANTEED WORKING SETUP
+    - name: Install PMD (BULLETPROOF VERSION)
       run: |
-        echo "📦 Installing PMD version ${{ inputs.pmd_version }}..."
-        
-        # Set PMD version with fallback to stable version
-        PMD_VERSION="${{ inputs.pmd_version }}"
-        FALLBACK_VERSION="6.55.0"
+        echo "🚀 BULLETPROOF PMD Installation - Guaranteed to work!"
         
         # Force install essential tools
         sudo apt-get update -qq
         sudo apt-get install -y wget unzip bc
         
-        # Ensure Java environment is properly configured
-        echo "☕ Setting up Java environment..."
+        # Set up bulletproof Java environment FIRST
+        echo "☕ Setting up bulletproof Java environment..."
         export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
         export PATH="$JAVA_HOME/bin:$PATH"
         echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
         echo "$JAVA_HOME/bin" >> $GITHUB_PATH
         
-        echo "Java version: $(java -version 2>&1)"
-        echo "JAVA_HOME: $JAVA_HOME"
-        echo "Java executable: $(which java)"
+        echo "🔍 Java environment verification:"
+        echo "  Java version: $(java -version 2>&1 | head -1)"
+        echo "  JAVA_HOME: $JAVA_HOME"
+        echo "  Java executable: $(which java)"
         
-        # Use a known working PMD version and simplified installation
-        echo "🔄 Installing PMD 6.55.0 (known working version)..."
-        
-        # Download known working PMD version
+        # Download GUARANTEED WORKING PMD version (6.55.0)
+        echo "📥 Downloading PMD 6.55.0 (guaranteed working)..."
         wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F6.55.0/pmd-bin-6.55.0.zip"
         unzip pmd-bin-6.55.0.zip
         
-        # Check what was actually extracted
-        echo "🔍 Checking extracted PMD structure..."
-        ls -la pmd-bin-6.55.0/ || echo "PMD extraction directory not found"
-        
-        # Install to standard location
+        # Clean installation
+        sudo rm -rf /opt/pmd
         sudo mv pmd-bin-6.55.0 /opt/pmd
         
-        # Check the actual PMD structure after moving
-        echo "🔍 PMD directory structure:"
-        ls -la /opt/pmd/
-        ls -la /opt/pmd/bin/ 2>/dev/null || echo "No bin directory found"
+        echo "✅ PMD 6.55.0 installed to /opt/pmd"
         
-        # Find the actual PMD executable
-        PMD_EXECUTABLE=""
-        if [ -f "/opt/pmd/bin/pmd" ]; then
-          PMD_EXECUTABLE="/opt/pmd/bin/pmd"
-        elif [ -f "/opt/pmd/bin/run.sh" ]; then
-          PMD_EXECUTABLE="/opt/pmd/bin/run.sh"
-        elif [ -f "/opt/pmd/pmd" ]; then
-          PMD_EXECUTABLE="/opt/pmd/pmd"
-        else
-          echo "🔍 Searching for PMD executable..."
-          PMD_EXECUTABLE=$(find /opt/pmd -name "pmd" -type f -executable 2>/dev/null | head -1)
-          if [ -z "$PMD_EXECUTABLE" ]; then
-            PMD_EXECUTABLE=$(find /opt/pmd -name "run.sh" -type f 2>/dev/null | head -1)
-          fi
-        fi
+        # Verify installation files
+        echo "🔍 PMD installation verification:"
+        echo "  PMD directory: $(ls -la /opt/pmd/ | wc -l) files"
+        echo "  PMD lib directory: $(ls -la /opt/pmd/lib/ | wc -l) JAR files"
+        echo "  PMD bin directory: $(ls -la /opt/pmd/bin/ | wc -l) executables"
         
-        if [ -n "$PMD_EXECUTABLE" ]; then
-          echo "✅ Found PMD executable at: $PMD_EXECUTABLE"
-          sudo chmod +x "$PMD_EXECUTABLE"
-          
-          # Create standard path if it doesn't exist
-          if [ "$PMD_EXECUTABLE" != "/opt/pmd/bin/pmd" ]; then
-            sudo mkdir -p /opt/pmd/bin
-            sudo ln -sf "$PMD_EXECUTABLE" /opt/pmd/bin/pmd
-            echo "🔗 Created symlink: /opt/pmd/bin/pmd -> $PMD_EXECUTABLE"
+        # CRITICAL: Find the correct PMD main class for 6.55.0
+        echo "🔍 Identifying correct PMD main class for version 6.55.0..."
+        
+        # Test main classes in order of likelihood for PMD 6.55.0
+        MAIN_CLASSES=(
+          "net.sourceforge.pmd.PMD"
+          "net.sourceforge.pmd.cli.PMD"
+          "net.sourceforge.pmd.cli.PmdCli"
+        )
+        
+        WORKING_MAIN_CLASS=""
+        for main_class in "${MAIN_CLASSES[@]}"; do
+          echo "🧪 Testing main class: $main_class"
+          if java -cp "/opt/pmd/lib/*" "$main_class" --help >/dev/null 2>&1; then
+            WORKING_MAIN_CLASS="$main_class"
+            echo "✅ FOUND WORKING MAIN CLASS: $WORKING_MAIN_CLASS"
+            break
+          else
+            echo "❌ $main_class - not working"
+            java -cp "/opt/pmd/lib/*" "$main_class" --help 2>&1 | head -2 || echo "  No output"
           fi
-        else
-          echo "❌ PMD executable not found anywhere in /opt/pmd"
-          echo "🔍 Complete directory listing:"
-          find /opt/pmd -type f 2>/dev/null || echo "No files found"
+        done
+        
+        if [ -z "$WORKING_MAIN_CLASS" ]; then
+          echo "🚨 CRITICAL ERROR: No working PMD main class found!"
+          echo "🔍 Analyzing JAR contents:"
+          for jar in /opt/pmd/lib/*.jar; do
+            if [ -f "$jar" ]; then
+              echo "📦 $(basename "$jar"): $(jar -tf "$jar" | grep -E 'PMD|pmd' | grep '\.class$' | head -2)"
+            fi
+          done
           exit 1
         fi
         
-        # Verify Java setup
-        echo "☕ Java configuration:"
-        java -version
-        echo "JAVA_HOME: $JAVA_HOME"
+        echo "🎯 Using PMD main class: $WORKING_MAIN_CLASS"
         
-        # Test PMD installation immediately with proper Java environment
-        echo "🧪 Testing PMD installation with Java environment..."
-        export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
-        export PATH="$JAVA_HOME/bin:$PATH"
+        # Create BULLETPROOF PMD script using the correct main class
+        echo "🔧 Creating bulletproof PMD execution script..."
+        sudo mkdir -p /opt/pmd/bin
         
-        echo "🔍 Java environment for PMD test:"
-        echo "  JAVA_HOME: $JAVA_HOME"
-        echo "  Java version: $(java -version 2>&1 | head -1)"
-        echo "  Java path: $(which java)"
+        # Write bulletproof script line by line to avoid YAML heredoc issues
+        echo '#!/bin/bash' | sudo tee /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo '# BULLETPROOF PMD Execution Script - Bypasses all shell script issues' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo '# Generated automatically with correct main class' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo '' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo '# Set up Java environment' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo 'if [ -z "$JAVA_HOME" ]; then' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo '    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo 'fi' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo 'export PATH="$JAVA_HOME/bin:$PATH"' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo '' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo '# Execute PMD directly with correct main class and classpath' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo "exec \"\$JAVA_HOME/bin/java\" -cp \"/opt/pmd/lib/*\" $WORKING_MAIN_CLASS \"\$@\"" | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
         
-        # Test with proper environment
-        if JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd check --help >/dev/null 2>&1; then
-          echo "✅ PMD installed and working correctly (check command)"
-        elif JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd --version >/dev/null 2>&1; then
-          echo "✅ PMD installed and working (version command)"
-        elif JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd -h >/dev/null 2>&1; then
-          echo "✅ PMD installed and working (help command)"
+        sudo chmod +x /opt/pmd/bin/pmd-bulletproof
+        
+        # Test the bulletproof script
+        echo "🧪 Testing bulletproof PMD script..."
+        if /opt/pmd/bin/pmd-bulletproof --help >/dev/null 2>&1; then
+          echo "✅ BULLETPROOF PMD script working perfectly!"
         else
-          echo "❌ PMD installation test failed"
-          echo "🔍 Trying to run PMD for diagnostics:"
-          echo "🔍 PMD output with environment:"
-          JAVA_HOME="$JAVA_HOME" /opt/pmd/bin/pmd 2>&1 | head -10 || echo "PMD execution completely failed"
-          
-          echo "🔍 Checking PMD script contents:"
-          head -10 /opt/pmd/bin/pmd || echo "Cannot read PMD script"
-          
-          echo "🔍 Java classpath test:"
-          JAVA_HOME="$JAVA_HOME" java -cp "/opt/pmd/lib/*" net.sourceforge.pmd.PMD --help 2>&1 | head -5 || echo "Direct Java execution failed"
+          echo "🚨 Bulletproof script failed - showing error:"
+          /opt/pmd/bin/pmd-bulletproof --help 2>&1 | head -5
+          exit 1
         fi
         
-        # Create bulletproof PMD execution script that bypasses shell script issues
-        echo "🔗 Creating bulletproof PMD execution script..."
-        echo '#!/bin/bash' | sudo tee /opt/pmd/bin/pmd-direct > /dev/null
-        echo '# Bulletproof PMD Execution - Direct Java Call' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo '' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo '# Set up robust Java environment' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo 'if [ -z "$JAVA_HOME" ]; then' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo '    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo 'fi' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo 'export PATH="$JAVA_HOME/bin:$PATH"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo '' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo '# Execute PMD directly via Java with explicit classpath' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo 'PMD_LIB="/opt/pmd/lib"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo 'CLASSPATH="$PMD_LIB/*"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo '' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo '# Direct Java execution bypassing PMD shell script' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        echo 'exec "$JAVA_HOME/bin/java" -cp "$CLASSPATH" net.sourceforge.pmd.PMD "$@"' | sudo tee -a /opt/pmd/bin/pmd-direct > /dev/null
-        
-        sudo chmod +x /opt/pmd/bin/pmd-direct
-        
-        # Create expected paths for Mule Guardian compatibility with direct execution
-        echo "🔗 Setting up PMD paths for Mule Guardian with direct execution..."
+        # Create all expected PMD paths using bulletproof script
+        echo "🔗 Setting up all PMD paths with bulletproof script..."
         sudo mkdir -p /opt/homebrew/bin
-        sudo ln -sf /opt/pmd/bin/pmd-direct /opt/homebrew/bin/pmd
-        sudo ln -sf /opt/pmd/bin/pmd-direct /opt/pmd/bin/pmd-safe
-        sudo ln -sf /opt/pmd/bin/pmd-direct /opt/pmd/bin/pmd-wrapper
+        sudo ln -sf /opt/pmd/bin/pmd-bulletproof /opt/homebrew/bin/pmd
+        sudo ln -sf /opt/pmd/bin/pmd-bulletproof /opt/pmd/bin/pmd
+        sudo ln -sf /opt/pmd/bin/pmd-bulletproof /opt/pmd/bin/pmd-direct
+        sudo ln -sf /opt/pmd/bin/pmd-bulletproof /opt/pmd/bin/pmd-safe
+        sudo ln -sf /opt/pmd/bin/pmd-bulletproof /opt/pmd/bin/pmd-wrapper
         
         # Add to PATH
         echo "/opt/pmd/bin" >> $GITHUB_PATH
         echo "/opt/homebrew/bin" >> $GITHUB_PATH
         export PATH="/opt/pmd/bin:/opt/homebrew/bin:$PATH"
         
-        # Final verification with wrapper script
-        echo "🔍 Final PMD installation verification:"
-        ls -la /opt/pmd/bin/pmd || echo "Main PMD path missing"
-        ls -la /opt/pmd/bin/pmd-wrapper || echo "PMD wrapper missing"
-        ls -la /opt/homebrew/bin/pmd || echo "Homebrew PMD path missing"
+        # Final comprehensive testing
+        echo "🧪 FINAL BULLETPROOF PMD TESTING..."
         
-        # Test the direct execution script
-        echo "🧪 Testing PMD direct execution script..."
-        if /opt/homebrew/bin/pmd --version >/dev/null 2>&1; then
-          echo "✅ PMD direct execution working correctly"
-        elif /opt/homebrew/bin/pmd -h >/dev/null 2>&1; then
-          echo "✅ PMD direct execution working (help command)"
-        else
-          echo "🔍 Testing direct Java execution of PMD..."
-          echo "🔍 Java version: $(java -version 2>&1 | head -1)"
-          echo "🔍 JAVA_HOME: $JAVA_HOME"
-          echo "🔍 PMD lib directory:"
-          ls -la /opt/pmd/lib/ | head -5 || echo "PMD lib directory not found"
-          
-          echo "🔍 Direct PMD execution test:"
-          /opt/homebrew/bin/pmd 2>&1 | head -10 || echo "Direct execution failed"
-          
-          echo "🔍 Manual Java classpath test:"
-          java -cp "/opt/pmd/lib/*" net.sourceforge.pmd.PMD --help 2>&1 | head -5 || echo "Manual Java execution failed"
-        fi
+        # Test all paths
+        PMD_PATHS=("/opt/homebrew/bin/pmd" "/opt/pmd/bin/pmd" "/opt/pmd/bin/pmd-bulletproof")
+        for pmd_path in "${PMD_PATHS[@]}"; do
+          echo "🧪 Testing: $pmd_path"
+          if "$pmd_path" --help >/dev/null 2>&1; then
+            echo "✅ $pmd_path - WORKING"
+          else
+            echo "❌ $pmd_path - FAILED"
+            "$pmd_path" --help 2>&1 | head -3
+          fi
+        done
         
-        echo "✅ PMD installation completed with direct execution"
-        echo "📍 PMD direct script at: /opt/pmd/bin/pmd-direct"
-        echo "📍 PMD symlink at: /opt/homebrew/bin/pmd"
-        echo "📍 All PMD paths use direct Java execution"
+        echo "🎉 BULLETPROOF PMD INSTALLATION COMPLETED!"
+        echo "📍 Main class: $WORKING_MAIN_CLASS"
+        echo "📍 Bulletproof script: /opt/pmd/bin/pmd-bulletproof"
+        echo "📍 All PMD paths use bulletproof direct Java execution"
         
     # Step 7: Install Python Dependencies
     - name: Install Python Dependencies
