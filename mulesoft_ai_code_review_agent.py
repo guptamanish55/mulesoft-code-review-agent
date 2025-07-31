@@ -295,7 +295,9 @@ class MuleSoftCodeReviewAgent:
         return exclusions_file
     
     def run_pmd_analysis(self) -> Tuple[str, float]:
-        """Run PMD analysis and return results"""
+        """Run PMD analysis and return results - PMD 6.x FORMAT VERSION"""
+        logger.info("🚀 PMD ANALYSIS STARTING - USING PMD 6.x COMMAND FORMAT")
+        logger.info("🚀 VERSION: Fixed command format - NO 'check' or '--file-list'")
         start_time = datetime.now()
         
         # Create exclusions file for PMD 6.x (uses different approach than file lists)
@@ -314,17 +316,28 @@ class MuleSoftCodeReviewAgent:
         if not pmd_executable:
             raise RuntimeError("PMD executable not found at expected locations")
         
-        # PMD 6.x command format (different from PMD 7.x)
+        # PMD 6.x command format - FORCE CORRECT FORMAT
         cmd = [
             pmd_executable,
-            '-d', str(self.project_path),  # Directory to analyze
-            '-R', str(self.ruleset_path),  # Ruleset
-            '-f', 'xml',                   # Format
-            '-cache', '/tmp/pmd-cache',    # Cache location
+            '-d', str(self.project_path),
+            '-R', str(self.ruleset_path),
+            '-f', 'xml',
+            '-cache', '/tmp/pmd-cache',
             '-encoding', 'UTF-8'
         ]
         
-        logger.info(f"Running PMD analysis with command: {' '.join(cmd[:3])}...")
+        # EXPLICIT DEBUG: Show exactly what command is being executed
+        logger.info("🚀 USING PMD 6.x FORMAT (NOT PMD 7.x)")
+        logger.info(f"🔍 PMD executable: {pmd_executable}")
+        logger.info(f"🔍 Full command: {' '.join(cmd)}")
+        logger.info("🚀 This should NOT contain 'check' or '--file-list'")
+        
+        # SAFEGUARD: Ensure no wrong arguments are present
+        cmd_str = ' '.join(cmd)
+        if 'check' in cmd_str or '--file-list' in cmd_str:
+            logger.error("🚨 CRITICAL ERROR: Command still contains wrong PMD 7.x format!")
+            logger.error(f"🚨 Problematic command: {cmd_str}")
+            raise RuntimeError("PMD command format error - contains check or --file-list")
         
         # Ensure Java environment is properly set for PMD execution
         pmd_env = os.environ.copy()
