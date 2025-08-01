@@ -74,6 +74,7 @@ class MuleSoftCodeReviewAgent:
     def __init__(self, project_path: str, ruleset_path: str):
         self.project_path = Path(project_path).resolve()
         self.ruleset_path = Path(ruleset_path).resolve()
+        self.pmd_path = None  # Will be set during PMD installation check
         self.excluded_patterns = [
             'target/**',
             '**/target/**',
@@ -104,15 +105,31 @@ class MuleSoftCodeReviewAgent:
     
     def check_pmd_installation(self) -> bool:
         """Check if PMD is installed and accessible"""
-        try:
-            logger.info("Checking PMD installation at /opt/homebrew/bin/pmd")
-            result = subprocess.run(['/opt/homebrew/bin/pmd', '--version'], 
-                                  capture_output=True, text=True, timeout=30)
-            logger.info(f"PMD check result: returncode={result.returncode}, stdout={result.stdout[:100]}, stderr={result.stderr[:100]}")
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.error(f"PMD check failed with exception: {e}")
-            return False
+        pmd_paths = [
+            '/opt/pmd/bin/pmd-bulletproof',  # GitHub Actions custom installation
+            '/opt/pmd/bin/pmd',              # Standard GitHub Actions installation
+            '/opt/homebrew/bin/pmd',         # macOS Homebrew
+            'pmd',                           # System PATH
+            '/usr/local/bin/pmd',            # Alternative installation
+        ]
+        
+        for pmd_path in pmd_paths:
+            try:
+                logger.info(f"Checking PMD installation at {pmd_path}")
+                result = subprocess.run([pmd_path, '--version'], 
+                                      capture_output=True, text=True, timeout=30)
+                logger.info(f"PMD check result: returncode={result.returncode}, stdout={result.stdout[:100]}, stderr={result.stderr[:100]}")
+                if result.returncode == 0:
+                    # Store the working PMD path for later use
+                    self.pmd_path = pmd_path
+                    logger.info(f"Found working PMD at: {pmd_path}")
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                logger.debug(f"PMD check failed at {pmd_path}: {e}")
+                continue
+        
+        logger.error("No working PMD installation found")
+        return False
     
     def get_project_info(self) -> Dict[str, str]:
         """Extract project information from pom.xml or project structure"""
@@ -286,47 +303,86 @@ class MuleSoftCodeReviewAgent:
         # Build PMD command with MuleSoft-specific file types
         file_list_path = self._create_file_list()
         
-        cmd = [
-            '/opt/homebrew/bin/pmd', 'check',
-            '--file-list', file_list_path,
-            '--rulesets', str(self.ruleset_path),
-            '--format', 'xml',
-            '--no-cache',
-            '--suppress-marker', 'PMD.SuppressWarnings',
-            '--encoding', 'UTF-8'
+        # Use the PMD path detected during installation check
+        pmd_executable = getattr(self, 'pmd_path', 'pmd')
+        
+        # Try different PMD command formats for compatibility
+        cmd_formats = [
+            # New PMD format (PMD 6.55.0+)
+            [
+                pmd_executable, 'check',
+                '--file-list', file_list_path,
+                '--rulesets', str(self.ruleset_path),
+                '--format', 'xml',
+                '--no-cache',
+                '--suppress-marker', 'PMD.SuppressWarnings',
+                '--encoding', 'UTF-8'
+            ],
+            # Older PMD format (PMD 6.x)
+            [
+                pmd_executable,
+                '-filelist', file_list_path,
+                '-rulesets', str(self.ruleset_path),
+                '-format', 'xml',
+                '-encoding', 'UTF-8',
+                '-suppressmarker', 'PMD.SuppressWarnings'
+            ],
+            # Alternative older format
+            [
+                pmd_executable,
+                '-d', ','.join([str(self.project_path)]),
+                '-rulesets', str(self.ruleset_path),
+                '-format', 'xml',
+                '-encoding', 'UTF-8'
+            ]
         ]
         
-        logger.info(f"Running PMD analysis...")
+        logger.info(f"Running PMD analysis with {pmd_executable}...")
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
+            # Try different command formats until one works
+            last_error = None
             
-            logger.info(f"PMD completed with return code: {result.returncode}")
-            if result.stderr:
-                logger.info(f"PMD stderr: {result.stderr}")
+            for i, cmd in enumerate(cmd_formats):
+                try:
+                    logger.info(f"Trying PMD command format {i+1}: {' '.join(cmd[:3])}...")
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                    end_time = datetime.now()
+                    duration = (end_time - start_time).total_seconds()
+                    
+                    logger.info(f"PMD completed with return code: {result.returncode}")
+                    if result.stderr:
+                        logger.info(f"PMD stderr: {result.stderr}")
+                    
+                    # Check for success (return code 0 = no violations, 4 = violations found)
+                    if result.returncode == 0 or result.returncode == 4:
+                        if result.stdout.strip():
+                            logger.info(f"✅ SUCCESS: PMD command format {i+1} worked!")
+                            return result.stdout, duration
+                        else:
+                            logger.warning(f"PMD format {i+1} succeeded but returned no output")
+                            continue
+                    else:
+                        logger.warning(f"PMD format {i+1} failed with return code {result.returncode}: {result.stderr}")
+                        last_error = result.stderr
+                        continue
+                        
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"PMD format {i+1} timed out")
+                    last_error = "PMD analysis timed out"
+                    continue
+                except Exception as e:
+                    logger.warning(f"PMD format {i+1} failed with exception: {e}")
+                    last_error = str(e)
+                    continue
             
-            if result.returncode != 0 and result.returncode != 4:  # PMD returns 4 for violations
-                logger.error(f"PMD command failed: {result.stderr}")
-                # Check if it's a ruleset error
-                if "Exception applying rule" in result.stderr:
-                    logger.warning("PMD ruleset has errors, trying alternative analysis")
-                    return self._run_alternative_analysis(), duration
-                else:
-                    raise RuntimeError(f"PMD analysis failed: {result.stderr}")
+            # If all PMD formats failed, try alternative analysis
+            logger.warning("All PMD command formats failed, trying alternative analysis")
+            if last_error and ("Exception applying rule" in last_error or "ruleset" in last_error.lower()):
+                logger.warning("PMD ruleset has errors, using alternative analysis")
             
-            # If no output, try alternative approach
-            if not result.stdout.strip():
-                logger.warning("PMD returned no output, trying alternative analysis")
-                return self._run_alternative_analysis(), duration
+            return self._run_alternative_analysis(), (datetime.now() - start_time).total_seconds()
             
-            return result.stdout, duration
-            
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("PMD analysis timed out after 5 minutes")
-        except FileNotFoundError:
-            raise RuntimeError("PMD is not installed. Please install PMD first.")
         finally:
             # Clean up exclusions file
             if exclusions_file.exists():
