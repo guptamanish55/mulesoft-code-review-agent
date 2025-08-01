@@ -35,6 +35,42 @@ on:
         required: false
         type: boolean
         default: true
+      # NEW: Configurable Compliance Scoring Parameters
+      config_file:
+        description: 'Path to compliance configuration file (optional)'
+        required: false
+        type: string
+        default: ''
+      file_weight:
+        description: 'File-based compliance weight (0-100, default: 70)'
+        required: false
+        type: number
+        default: 70
+      severity_weight:
+        description: 'Severity-based compliance weight (0-100, default: 30)'
+        required: false
+        type: number
+        default: 30
+      high_weight:
+        description: 'HIGH priority violation weight (default: 10)'
+        required: false
+        type: number
+        default: 10
+      medium_weight:
+        description: 'MEDIUM priority violation weight (default: 5)'
+        required: false
+        type: number
+        default: 5
+      low_weight:
+        description: 'LOW priority violation weight (default: 2)'
+        required: false
+        type: number
+        default: 2
+      info_weight:
+        description: 'INFO priority violation weight (default: 1)'
+        required: false
+        type: number
+        default: 1
     outputs:
       # Outputs that calling workflows can use
       compliance_score:
@@ -77,13 +113,20 @@ jobs:
         
         # Copy core files from the common repo checkout
         cp mule-guardian/mulesoft_ai_code_review_agent.py .
+        cp mule-guardian/compliance_config.py .
         cp mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml .
         cp mule-guardian/requirements.txt .
         
         echo "✅ Core files copied from common repository"
         
+        # Copy custom config file if specified
+        if [ -n "${{ inputs.config_file }}" ] && [ -f "${{ inputs.config_file }}" ]; then
+          echo "📝 Copying custom configuration file: ${{ inputs.config_file }}"
+          cp "${{ inputs.config_file }}" compliance_config.json
+        fi
+        
         # Verify files exist
-        for file in mulesoft_ai_code_review_agent.py comprehensive-mulesoft-ruleset-no-debug.xml requirements.txt; do
+        for file in mulesoft_ai_code_review_agent.py compliance_config.py comprehensive-mulesoft-ruleset-no-debug.xml requirements.txt; do
           if [ ! -f "$file" ]; then
             echo "❌ Error: $file not found"
             exit 1
@@ -281,8 +324,31 @@ jobs:
     # Step 8: Run Mule Guardian Analysis
     - name: Run Mule Guardian Analysis
       id: mule-analysis
+      env:
+        # Configurable Compliance Scoring Environment Variables
+        COMPLIANCE_FILE_WEIGHT: ${{ inputs.file_weight }}
+        COMPLIANCE_SEVERITY_WEIGHT: ${{ inputs.severity_weight }}
+        COMPLIANCE_HIGH_WEIGHT: ${{ inputs.high_weight }}
+        COMPLIANCE_MEDIUM_WEIGHT: ${{ inputs.medium_weight }}
+        COMPLIANCE_LOW_WEIGHT: ${{ inputs.low_weight }}
+        COMPLIANCE_INFO_WEIGHT: ${{ inputs.info_weight }}
       run: |
         echo "🔍 Starting Mule Guardian analysis..."
+        
+        # Display configurable compliance settings
+        echo "⚙️ Configurable Compliance Settings:"
+        echo "   - File-based weight: ${{ inputs.file_weight }}%"
+        echo "   - Severity-based weight: ${{ inputs.severity_weight }}%"
+        echo "   - HIGH violation weight: ${{ inputs.high_weight }}"
+        echo "   - MEDIUM violation weight: ${{ inputs.medium_weight }}"
+        echo "   - LOW violation weight: ${{ inputs.low_weight }}"
+        echo "   - INFO violation weight: ${{ inputs.info_weight }}"
+        if [ -n "${{ inputs.config_file }}" ]; then
+          echo "   - Custom config file: ${{ inputs.config_file }}"
+        else
+          echo "   - Using environment variable configuration"
+        fi
+        echo ""
         
         # Set dynamic project name if not provided
         if [ -z "${{ inputs.project_name }}" ] || [ "${{ inputs.project_name }}" = "" ]; then
@@ -387,11 +453,9 @@ jobs:
             exit 1
           fi
         else
-          echo "⚠️ Could not determine which analysis method was used"
-          echo "📋 Last few lines of analysis output:"
-          tail -10 analysis_output.log || echo "No output log found"
+          echo "❓ UNKNOWN: Could not determine analysis method used"
+          echo "❓ Check the analysis_output.log for more details"
         fi
-        echo ""
         
         # Extract results from JSON report
         if [ -f "quality-report.json" ]; then
@@ -462,8 +526,10 @@ jobs:
               echo "🔍 Calculated TOTAL_VIOLATIONS: $TOTAL_VIOLATIONS"
             fi
             
-            # Calculate compliance if not found
+            # Calculate compliance if not found using configured weights
             if [ -z "$COMPLIANCE" ]; then
+              echo "🚨 CRITICAL: New configurable compliance system should have provided compliance score!"
+              echo "🚨 Falling back to legacy calculation - this should not happen with updated agent"
               DEDUCTION=$((HIGH_COUNT*3 + MEDIUM_COUNT*2 + LOW_COUNT*1))
               COMPLIANCE=$((100 - DEDUCTION))
               
@@ -471,7 +537,7 @@ jobs:
               if [ $COMPLIANCE -lt 20 ]; then
                 COMPLIANCE=20
               fi
-              echo "🔍 Calculated COMPLIANCE: $COMPLIANCE%"
+              echo "🔍 Legacy calculated COMPLIANCE: $COMPLIANCE%"
             fi
           fi
           
@@ -493,9 +559,10 @@ jobs:
           echo "COMPLIANCE_SCORE=$COMPLIANCE" >> $GITHUB_OUTPUT
           echo "TOTAL_VIOLATIONS=$TOTAL_VIOLATIONS" >> $GITHUB_OUTPUT
           
-          echo "🛡️ Analysis Results:"
-          echo "   - Compliance Score: $COMPLIANCE%"
+          echo "🛡️ Configurable Compliance Results:"
+          echo "   - Compliance Score: $COMPLIANCE% (using ${{ inputs.file_weight }}%/${{ inputs.severity_weight }}% weighting)"
           echo "   - Total Violations: ${TOTAL_VIOLATIONS:-0}"
+          echo "   - Priority Weights: HIGH=${{ inputs.high_weight }}, MEDIUM=${{ inputs.medium_weight }}, LOW=${{ inputs.low_weight }}, INFO=${{ inputs.info_weight }}"
           
         else
           echo "❌ Analysis failed - no report generated"
