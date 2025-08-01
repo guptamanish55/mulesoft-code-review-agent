@@ -7,12 +7,5 @@
     "LOW": 2,
     "INFO": 1
   },
-  "minimum_compliance": 0.0,
-  "_description": {
-    "file_based_weight": "Percentage weight for clean files compliance (0-100)",
-    "severity_based_weight": "Percentage weight for severity-adjusted compliance (0-100)",
-    "priority_weights": "Weight multipliers for each violation priority level",
-    "minimum_compliance": "Minimum compliance score (0-100)",
-    "usage": "This is a lenient configuration suitable for most development workflows"
-  }
+  "minimum_compliance": 0.0
 }
