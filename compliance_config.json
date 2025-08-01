@@ -1,10 +1,10 @@
 {
-  "file_based_weight": 60.0,
-  "severity_based_weight": 40.0,
+  "file_based_weight": 70.0,
+  "severity_based_weight": 30.0,
   "priority_weights": {
-    "HIGH": 3,
-    "MEDIUM": 2,
-    "LOW": 1,
+    "HIGH": 10,
+    "MEDIUM": 5,
+    "LOW": 2,
     "INFO": 1
   },
   "minimum_compliance": 0.0,
