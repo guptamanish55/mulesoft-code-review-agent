@@ -22,6 +22,15 @@ import re
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Import compliance configuration system
+try:
+    from compliance_config import ComplianceConfigManager, calculate_compliance_percentage as calc_compliance
+    COMPLIANCE_CONFIG_AVAILABLE = True
+except ImportError:
+    # Fallback if compliance_config is not available
+    COMPLIANCE_CONFIG_AVAILABLE = False
+    logger.warning("Compliance configuration system not available, using legacy calculation")
+
 class Priority(Enum):
     """PMD Priority levels"""
     HIGH = 1
@@ -95,42 +104,15 @@ class MuleSoftCodeReviewAgent:
     
     def check_pmd_installation(self) -> bool:
         """Check if PMD is installed and accessible"""
-        # Try multiple PMD paths and command formats
-        pmd_paths = ['/opt/pmd/bin/pmd-bulletproof', '/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-direct', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd']
-        version_commands = ['--version', '-v', '-version']  # PMD 6.x compatible
-        
-        for pmd_path in pmd_paths:
-            if not os.path.exists(pmd_path):
-                continue
-                
-            logger.info(f"Checking PMD installation at {pmd_path}")
-            
-            # Try different version command formats for compatibility
-            for version_cmd in version_commands:
-                try:
-                    cmd_parts = [pmd_path] + version_cmd.split()
-                    result = subprocess.run(cmd_parts, capture_output=True, text=True, timeout=30)
-                    
-                    # Check if output contains PMD version info (successful)
-                    if result.returncode == 0 or ('pmd' in result.stdout.lower() or 'version' in result.stdout.lower()):
-                        logger.info(f"✅ PMD verified at {pmd_path} using command: {version_cmd}")
-                        logger.info(f"PMD version info: {result.stdout[:200]}")
-                        return True
-                    else:
-                        logger.debug(f"Version check failed with {version_cmd}: returncode={result.returncode}, stdout={result.stdout[:100]}")
-                        
-                except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-                    logger.debug(f"PMD check failed with {version_cmd} at {pmd_path}: {e}")
-                    continue
-        
-        # If all version checks failed, but PMD binary exists, assume it's working
-        for pmd_path in pmd_paths:
-            if os.path.exists(pmd_path):
-                logger.warning(f"PMD binary found at {pmd_path} but version check failed. Assuming PMD is functional.")
-                return True
-        
-        logger.error("PMD not found at any expected location")
-        return False
+        try:
+            logger.info("Checking PMD installation at /opt/homebrew/bin/pmd")
+            result = subprocess.run(['/opt/homebrew/bin/pmd', '--version'], 
+                                  capture_output=True, text=True, timeout=30)
+            logger.info(f"PMD check result: returncode={result.returncode}, stdout={result.stdout[:100]}, stderr={result.stderr[:100]}")
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.error(f"PMD check failed with exception: {e}")
+            return False
     
     def get_project_info(self) -> Dict[str, str]:
         """Extract project information from pom.xml or project structure"""
@@ -295,229 +277,35 @@ class MuleSoftCodeReviewAgent:
         return exclusions_file
     
     def run_pmd_analysis(self) -> Tuple[str, float]:
-        """Run PMD analysis and return results - PMD 6.x FORMAT VERSION"""
-        logger.info("🚀 PMD ANALYSIS STARTING - USING PMD 6.x COMMAND FORMAT")
-        logger.info("🚀 VERSION: Fixed command format - NO 'check' or '--file-list'")
+        """Run PMD analysis and return results"""
         start_time = datetime.now()
         
-        # Create exclusions file for PMD 6.x (uses different approach than file lists)
+        # Create exclusions file
         exclusions_file = self.create_pmd_exclusions_file()
         
-        # Try multiple PMD paths (same as check_pmd_installation)
-        pmd_paths = ['/opt/pmd/bin/pmd-bulletproof', '/opt/homebrew/bin/pmd', '/opt/pmd/bin/pmd-direct', '/opt/pmd/bin/pmd-safe', '/opt/pmd/bin/pmd-wrapper', '/opt/pmd/bin/pmd']
-        pmd_executable = None
+        # Build PMD command with MuleSoft-specific file types
+        file_list_path = self._create_file_list()
         
-        for pmd_path in pmd_paths:
-            if os.path.exists(pmd_path):
-                pmd_executable = pmd_path
-                logger.info(f"Using PMD executable: {pmd_executable}")
-                break
-        
-        if not pmd_executable:
-            raise RuntimeError("PMD executable not found at expected locations")
-        
-        # PMD 6.x command format - FORCE CORRECT FORMAT
         cmd = [
-            pmd_executable,
-            '-d', str(self.project_path),
-            '-R', str(self.ruleset_path),
-            '-f', 'xml',
-            '-cache', '/tmp/pmd-cache',
-            '-encoding', 'UTF-8'
+            '/opt/homebrew/bin/pmd', 'check',
+            '--file-list', file_list_path,
+            '--rulesets', str(self.ruleset_path),
+            '--format', 'xml',
+            '--no-cache',
+            '--suppress-marker', 'PMD.SuppressWarnings',
+            '--encoding', 'UTF-8'
         ]
         
-        # EXPLICIT DEBUG: Show exactly what command is being executed
-        logger.info("🚀 USING PMD 6.x FORMAT (NOT PMD 7.x)")
-        logger.info(f"🔍 PMD executable: {pmd_executable}")
-        logger.info(f"🔍 Full command: {' '.join(cmd)}")
-        logger.info("🚀 This should NOT contain 'check' or '--file-list'")
-        
-        # Show what files PMD will analyze
-        logger.info(f"🔍 PROJECT ANALYSIS:")
-        logger.info(f"🔍 Project path: {self.project_path}")
-        logger.info(f"🔍 Ruleset path: {self.ruleset_path}")
-        
-        # Count files that would be analyzed
-        xml_files = list(self.project_path.glob('**/*.xml'))
-        java_files = list(self.project_path.glob('**/*.java'))
-        yaml_files = list(self.project_path.glob('**/*.yaml')) + list(self.project_path.glob('**/*.yml'))
-        
-        logger.info(f"🔍 Files in project:")
-        logger.info(f"🔍   XML files: {len(xml_files)}")
-        logger.info(f"🔍   Java files: {len(java_files)}")
-        logger.info(f"🔍   YAML files: {len(yaml_files)}")
-        
-        if xml_files:
-            logger.info(f"🔍 Sample XML files: {[f.name for f in xml_files[:3]]}")
-        
-        # Verify ruleset exists and show basic info
-        if self.ruleset_path.exists():
-            ruleset_size = self.ruleset_path.stat().st_size
-            logger.info(f"🔍 Ruleset file: {self.ruleset_path} ({ruleset_size} bytes)")
-            
-            # Read first few lines of ruleset to verify it's valid
-            try:
-                with open(self.ruleset_path, 'r') as f:
-                    ruleset_preview = f.read(300)
-                    rule_count = ruleset_preview.count('<rule ')
-                    logger.info(f"🔍 Ruleset preview (first 300 chars): {ruleset_preview}")
-                    logger.info(f"🔍 Approximate rule count in preview: {rule_count}")
-            except Exception as e:
-                logger.warning(f"🚨 Cannot read ruleset file: {e}")
-        else:
-            logger.error(f"🚨 Ruleset file does not exist: {self.ruleset_path}")
-        
-        # SAFEGUARD: Ensure no wrong arguments are present
-        cmd_str = ' '.join(cmd)
-        if 'check' in cmd_str or '--file-list' in cmd_str:
-            logger.error("🚨 CRITICAL ERROR: Command still contains wrong PMD 7.x format!")
-            logger.error(f"🚨 Problematic command: {cmd_str}")
-            raise RuntimeError("PMD command format error - contains check or --file-list")
-        
-        # Ensure Java environment is properly set for PMD execution
-        pmd_env = os.environ.copy()
-        if 'JAVA_HOME' not in pmd_env or not pmd_env['JAVA_HOME']:
-            # Try to find Java home
-            try:
-                java_path = subprocess.run(['which', 'java'], capture_output=True, text=True, timeout=10)
-                if java_path.returncode == 0 and java_path.stdout.strip():
-                    # Get JAVA_HOME from java executable path
-                    java_home = os.path.dirname(os.path.dirname(java_path.stdout.strip()))
-                    if os.path.exists(os.path.join(java_home, 'lib')):
-                        pmd_env['JAVA_HOME'] = java_home
-                        logger.info(f"Set JAVA_HOME for PMD: {java_home}")
-            except Exception as e:
-                logger.warning(f"Could not determine JAVA_HOME: {e}")
-        
-        # Ensure PATH includes Java bin directory
-        if 'JAVA_HOME' in pmd_env:
-            java_bin = os.path.join(pmd_env['JAVA_HOME'], 'bin')
-            if java_bin not in pmd_env.get('PATH', ''):
-                pmd_env['PATH'] = f"{java_bin}{os.pathsep}{pmd_env.get('PATH', '')}"
+        logger.info(f"Running PMD analysis...")
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=pmd_env)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
             logger.info(f"PMD completed with return code: {result.returncode}")
-            logger.info(f"PMD stdout length: {len(result.stdout) if result.stdout else 0} characters")
-            logger.info(f"PMD stderr length: {len(result.stderr) if result.stderr else 0} characters")
-            
             if result.stderr:
                 logger.info(f"PMD stderr: {result.stderr}")
-            
-            # Enhanced analysis of PMD output
-            if result.stdout:
-                violation_count = result.stdout.count('<violation')
-                file_count = result.stdout.count('<file ')
-                logger.info(f"🔍 PMD OUTPUT ANALYSIS:")
-                logger.info(f"🔍 XML files analyzed: {file_count}")
-                logger.info(f"🔍 Violations found: {violation_count}")
-                logger.info(f"🔍 Output preview: {result.stdout[:500]}...")
-                
-                if violation_count == 0:
-                    logger.warning("🚨 PMD found 0 violations - this will result in 100% compliance!")
-                    logger.warning("🚨 This suggests PMD is not finding issues or ruleset is not effective")
-                    logger.warning(f"🚨 Project path analyzed: {self.project_path}")
-                    logger.warning(f"🚨 Ruleset used: {self.ruleset_path}")
-                    
-                    # Additional diagnostics for 0 violations
-                    if file_count == 0:
-                        logger.error("🚨 PMD analyzed 0 files! This is definitely wrong.")
-                        logger.error("🚨 PMD command may not be finding files in the specified directory")
-                    elif file_count > 0:
-                        logger.warning(f"🚨 PMD analyzed {file_count} files but found no violations")
-                        logger.warning("🚨 This could mean:")
-                        logger.warning("🚨   - Ruleset rules don't match the file types/patterns")
-                        logger.warning("🚨   - Files are valid according to the rules")
-                        logger.warning("🚨   - PMD version compatibility issues with ruleset")
-                        
-                        # Try to show which files were processed
-                        import re
-                        file_names = re.findall(r'<file[^>]+name="([^"]+)"', result.stdout)
-                        if file_names:
-                            logger.info(f"🔍 Files processed by PMD: {file_names[:5]}...")
-                        else:
-                            logger.warning("🚨 Could not extract file names from PMD output")
-                else:
-                    logger.info(f"✅ PMD found {violation_count} violations across {file_count} files")
-            else:
-                logger.warning("🚨 PMD returned empty output")
-            
-            # Check for specific Java classpath errors
-            if "Could not find or load main class" in result.stderr:
-                logger.error("🚨 PMD Java classpath issue detected!")
-                logger.error(f"🚨 PMD Error: {result.stderr}")
-                logger.info("🔄 Trying alternative PMD path...")
-                
-                # Try the other PMD executable if available
-                alternative_paths = [p for p in pmd_paths if p != pmd_executable and os.path.exists(p)]
-                if alternative_paths:
-                    logger.info(f"Trying alternative PMD executable: {alternative_paths[0]}")
-                    alt_cmd = cmd.copy()
-                    alt_cmd[0] = alternative_paths[0]
-                    
-                    try:
-                        alt_result = subprocess.run(alt_cmd, capture_output=True, text=True, timeout=300, env=pmd_env)
-                        if alt_result.returncode in [0, 4] and alt_result.stdout.strip():
-                            logger.info("✅ Alternative PMD executable worked - using FULL PMD analysis")
-                            return alt_result.stdout, duration
-                        else:
-                            logger.error(f"Alternative PMD also failed: returncode={alt_result.returncode}, stderr={alt_result.stderr}")
-                    except Exception as e:
-                        logger.error(f"Alternative PMD executable also failed: {e}")
-                
-                # Final attempt: Direct Java execution with multiple main classes
-                logger.info("🔄 Final attempt: Direct Java execution with multiple main classes...")
-                try:
-                    pmd_lib_path = "/opt/pmd/lib"
-                    if os.path.exists(pmd_lib_path):
-                        # Try multiple main classes that could work
-                        main_classes = [
-                            'net.sourceforge.pmd.PMD',
-                            'net.sourceforge.pmd.cli.PMD', 
-                            'net.sourceforge.pmd.cli.PmdCli'
-                        ]
-                        
-                        for main_class in main_classes:
-                            logger.info(f"Trying direct Java execution with main class: {main_class}")
-                            
-                            # PMD 6.x direct Java command format
-                            java_cmd = [
-                                'java', '-cp', f'{pmd_lib_path}/*',
-                                main_class,
-                                '-d', str(self.project_path),  # Directory to analyze
-                                '-R', str(self.ruleset_path),  # Ruleset
-                                '-f', 'xml',                   # Format
-                                '-cache', '/tmp/pmd-cache',    # Cache location
-                                '-encoding', 'UTF-8'
-                            ]
-                            
-                            try:
-                                direct_result = subprocess.run(java_cmd, capture_output=True, text=True, timeout=300, env=pmd_env)
-                                
-                                if direct_result.returncode in [0, 4] and direct_result.stdout.strip():
-                                    logger.info(f"✅ SUCCESS: Direct Java PMD execution worked with {main_class} - using FULL PMD analysis")
-                                    return direct_result.stdout, duration
-                                else:
-                                    logger.warning(f"Main class {main_class} failed: returncode={direct_result.returncode}")
-                                    if direct_result.stderr:
-                                        logger.warning(f"Stderr: {direct_result.stderr[:200]}")
-                            except Exception as main_class_error:
-                                logger.warning(f"Exception with main class {main_class}: {main_class_error}")
-                        
-                        logger.error("All PMD main classes failed in direct Java execution")
-                    else:
-                        logger.error(f"PMD lib directory not found: {pmd_lib_path}")
-                        
-                except Exception as e:
-                    logger.error(f"Direct Java execution failed with exception: {e}")
-                
-                # If all PMD approaches fail, fall back to alternative analysis
-                logger.error("🚨 CRITICAL: All PMD execution methods failed!")
-                logger.error("🚨 Falling back to LIMITED alternative analysis - this will show HIGHER compliance scores!")
-                return self._run_alternative_analysis(), duration
             
             if result.returncode != 0 and result.returncode != 4:  # PMD returns 4 for violations
                 logger.error(f"PMD command failed: {result.stderr}")
@@ -526,20 +314,13 @@ class MuleSoftCodeReviewAgent:
                     logger.warning("PMD ruleset has errors, trying alternative analysis")
                     return self._run_alternative_analysis(), duration
                 else:
-                    # For other errors, also try alternative analysis instead of failing
-                    logger.warning(f"PMD failed with error, trying alternative analysis: {result.stderr}")
-                    return self._run_alternative_analysis(), duration
+                    raise RuntimeError(f"PMD analysis failed: {result.stderr}")
             
             # If no output, try alternative approach
             if not result.stdout.strip():
-                logger.error("🚨 PMD returned no output - this indicates PMD failed silently!")
-                logger.error("🚨 Falling back to LIMITED alternative analysis - this will show HIGHER compliance scores!")
+                logger.warning("PMD returned no output, trying alternative analysis")
                 return self._run_alternative_analysis(), duration
             
-            logger.info("✅ SUCCESS: Using FULL PMD analysis with comprehensive ruleset")
-            logger.info(f"✅ PMD analysis completed successfully - using comprehensive rules")
-            logger.info(f"🔍 PMD XML output size: {len(result.stdout)} characters")
-            logger.info("🔍 Now parsing XML to extract violations...")
             return result.stdout, duration
             
         except subprocess.TimeoutExpired:
@@ -621,9 +402,6 @@ class MuleSoftCodeReviewAgent:
     
     def _run_alternative_analysis(self) -> str:
         """Run alternative analysis when PMD doesn't work"""
-        logger.warning("🚨 IMPORTANT: Running ALTERNATIVE analysis instead of PMD!")
-        logger.warning("🚨 This will result in FEWER violations and HIGHER compliance scores!")
-        logger.warning("🚨 Alternative analysis only checks for basic issues like plaintext passwords, HTTP connections, etc.")
         logger.info("Running alternative analysis for MuleSoft files")
         
         violations = []
@@ -862,62 +640,22 @@ class MuleSoftCodeReviewAgent:
         """Parse PMD XML output into Violation objects with precise line targeting"""
         violations = []
         
-        logger.info(f"🔍 PARSING PMD XML OUTPUT...")
-        logger.info(f"🔍 XML output length: {len(xml_output)} characters")
-        logger.info(f"🔍 XML preview: {xml_output[:1000]}...")
+        logger.info(f"Parsing PMD XML output...")
+        ns = {'pmd': 'http://pmd.sourceforge.net/report/2.0.0'}
         
         try:
             root = ET.fromstring(xml_output)
-            logger.info(f"🔍 XML root tag: {root.tag}")
-            logger.info(f"🔍 XML root attributes: {root.attrib}")
             
-            # Try multiple approaches to find file elements (PMD 6.x vs 7.x namespace differences)
-            ns_variants = [
-                {'pmd': 'http://pmd.sourceforge.net/report/2.0.0'},  # PMD 7.x
-                {},  # No namespace (PMD 6.x often has no namespace)
-            ]
-            
-            file_elements = []
-            for ns in ns_variants:
-                if ns:
-                    file_elements = root.findall('.//pmd:file', ns)
-                    logger.info(f"🔍 Trying namespace {ns}: found {len(file_elements)} file elements")
-                else:
-                    file_elements = root.findall('.//file')  # No namespace
-                    logger.info(f"🔍 Trying no namespace: found {len(file_elements)} file elements")
-                
-                if file_elements:
-                    logger.info(f"✅ Found {len(file_elements)} files using namespace: {ns}")
-                    break
-            
-            if not file_elements:
-                logger.error("🚨 NO FILE ELEMENTS FOUND IN PMD XML!")
-                logger.error(f"🚨 Available tags in XML: {[elem.tag for elem in root.iter()][:10]}")
-                return violations
+            # Count file elements
+            file_elements = root.findall('.//pmd:file', ns)
             
             for file_elem in file_elements:
                 file_path = file_elem.get('name', '')
                 # Clean file path to remove temporary directory prefix
                 clean_file_path = self._clean_file_path(file_path)
                 
-                logger.info(f"🔍 Processing file: {clean_file_path}")
-                
-                # Find violation elements with namespace flexibility
-                violation_elements = []
-                for ns in ns_variants:
-                    if ns:
-                        violation_elements = file_elem.findall('.//pmd:violation', ns)
-                    else:
-                        violation_elements = file_elem.findall('.//violation')  # No namespace
-                    
-                    if violation_elements:
-                        logger.info(f"🔍 Found {len(violation_elements)} violations in {clean_file_path} using namespace: {ns}")
-                        break
-                
-                if not violation_elements:
-                    logger.warning(f"🚨 No violations found in file {clean_file_path}")
-                    logger.warning(f"🚨 Available child tags: {[child.tag for child in file_elem]}")
-                    continue
+                # Count violation elements per file
+                violation_elements = file_elem.findall('.//pmd:violation', ns)
                 
                 for violation_elem in violation_elements:
                     rule = violation_elem.get('rule', 'Unknown')
@@ -962,23 +700,12 @@ class MuleSoftCodeReviewAgent:
                     )
                     violations.append(violation)
                     
-                    # Log precise violation details for debugging
-                    logger.debug(f"Parsed violation: {rule} at line {line}:{column} in {clean_file_path}")
-            
-            logger.info(f"🔍 PARSING COMPLETE:")
-            logger.info(f"🔍 Total violations parsed: {len(violations)}")
-            logger.info(f"🔍 Files with violations: {len(file_elements)}")
-            
-            if len(violations) == 0:
-                logger.error("🚨 CRITICAL: Parsed 0 violations from PMD XML!")
-                logger.error("🚨 But PMD output analysis showed violations were found!")
-                logger.error("🚨 This is a namespace/parsing bug!")
-                
+                                    # Log precise violation details for debugging
+                logger.info(f"Violation: {rule} at line {line}:{column} in {clean_file_path}")
+                    
         except ET.ParseError as e:
             logger.error(f"Failed to parse PMD XML output: {e}")
-            logger.error(f"🚨 XML content causing parse error: {xml_output[:2000]}")
             raise RuntimeError(f"Invalid PMD XML output: {e}")
-            
         return violations
     
     def _clean_file_path(self, file_path: str) -> str:
@@ -1274,14 +1001,27 @@ class MuleSoftCodeReviewAgent:
         clean_project_path = self._get_clean_project_path()
         clean_ruleset_path = self._get_clean_ruleset_path()
         
-        # Calculate compliance percentage
-        high_violations = violations_by_priority.get('HIGH', 0)
-        medium_violations = violations_by_priority.get('MEDIUM', 0)
-        low_violations = violations_by_priority.get('LOW', 0)
-        
-        # Weighted deduction: HIGH=3 points, MEDIUM=2 points, LOW=1 point
-        total_deduction = (high_violations * 3) + (medium_violations * 2) + (low_violations * 1)
-        compliance_percentage = max(20.0, 100.0 - total_deduction)  # Minimum 20% compliance
+        # Calculate compliance percentage using configurable weights
+        if COMPLIANCE_CONFIG_AVAILABLE:
+            # Create a mock report object for the unified compliance calculation
+            class MockReport:
+                def __init__(self):
+                    self.files_scanned = files_scanned
+                    self.total_violations = total_violations
+                    self.violations_by_priority = violations_by_priority
+                    self.violations = violations
+            
+            mock_report = MockReport()
+            compliance_percentage = calc_compliance(mock_report)
+        else:
+            # Fallback to legacy GitHub Actions method
+            high_violations = violations_by_priority.get('HIGH', 0)
+            medium_violations = violations_by_priority.get('MEDIUM', 0)
+            low_violations = violations_by_priority.get('LOW', 0)
+            
+            # Weighted deduction: HIGH=3 points, MEDIUM=2 points, LOW=1 point
+            total_deduction = (high_violations * 3) + (medium_violations * 2) + (low_violations * 1)
+            compliance_percentage = max(20.0, 100.0 - total_deduction)  # Minimum 20% compliance
         
         return CodeReviewReport(
             project_name=project_info['name'],
@@ -1369,26 +1109,13 @@ class MuleSoftCodeReviewAgent:
     
     def save_report_json(self, report: CodeReviewReport, output_path: str):
         """Save report as JSON"""
-        logger.info(f"🔍 SAVING JSON REPORT:")
-        logger.info(f"🔍   Total violations: {report.total_violations}")
-        logger.info(f"🔍   Compliance percentage: {report.compliance_percentage}")
-        logger.info(f"🔍   Output path: {output_path}")
-        
         report_dict = asdict(report)
         # Convert Priority enum to string for JSON serialization
         for violation in report_dict['violations']:
             violation['priority'] = violation['priority'].name
         
-        # Log key fields to ensure they're correct
-        logger.info(f"🔍 JSON REPORT DICT:")
-        logger.info(f"🔍   compliance_percentage: {report_dict['compliance_percentage']}")
-        logger.info(f"🔍   total_violations: {report_dict['total_violations']}")
-        logger.info(f"🔍   violations_by_priority: {report_dict['violations_by_priority']}")
-        
         with open(output_path, 'w') as f:
             json.dump(report_dict, f, indent=2)
-            
-        logger.info(f"✅ JSON report saved successfully to {output_path}")
     
     def run_review(self, output_path: Optional[str] = None, analysis_mode: str = 'comprehensive', priority_filter: str = 'all') -> CodeReviewReport:
         """Run complete code review process with advanced options"""
@@ -1401,19 +1128,8 @@ class MuleSoftCodeReviewAgent:
         # Run PMD analysis
         xml_output, scan_duration = self.run_pmd_analysis()
         
-        logger.info(f"🔍 STARTING XML PARSING OF PMD OUTPUT...")
-        logger.info(f"🔍 XML output received: {len(xml_output)} characters")
-        
         # Parse results
         violations = self.parse_pmd_xml_output(xml_output)
-        
-        logger.info(f"🔍 XML PARSING RESULT:")
-        logger.info(f"🔍 Total violations extracted: {len(violations)}")
-        
-        if len(violations) == 0:
-            logger.error("🚨 CRITICAL ISSUE: XML parsing returned 0 violations!")
-            logger.error("🚨 This explains why compliance is 100% instead of ~28%!")
-            logger.error("🚨 Check the parsing logs above for namespace/XML structure issues!")
         
         # Apply priority filter
         if priority_filter != 'all':
@@ -1474,6 +1190,13 @@ def main():
     parser.add_argument('ruleset_path', help='Path to PMD ruleset XML file')
     parser.add_argument('--output', '-o', help='Output JSON report file path')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--config', '-c', help='Path to compliance configuration file')
+    parser.add_argument('--file-weight', type=float, help='File-based compliance weight (0-100)')
+    parser.add_argument('--severity-weight', type=float, help='Severity-based compliance weight (0-100)')
+    parser.add_argument('--high-weight', type=int, help='HIGH priority violation weight')
+    parser.add_argument('--medium-weight', type=int, help='MEDIUM priority violation weight')
+    parser.add_argument('--low-weight', type=int, help='LOW priority violation weight')
+    parser.add_argument('--info-weight', type=int, help='INFO priority violation weight')
     
     args = parser.parse_args()
     
@@ -1481,6 +1204,36 @@ def main():
         logging.getLogger().setLevel(logging.INFO)
     
     try:
+        # Set up compliance configuration if using the new system
+        if COMPLIANCE_CONFIG_AVAILABLE:
+            # Load base configuration
+            config = None
+            if args.config:
+                config = ComplianceConfigManager.load_config(args.config)
+            else:
+                config = ComplianceConfigManager.load_config()
+            
+            # Override with command line arguments if provided
+            if args.file_weight is not None:
+                config.file_based_weight = args.file_weight
+            if args.severity_weight is not None:
+                config.severity_based_weight = args.severity_weight
+            if args.high_weight is not None:
+                config.priority_weights['HIGH'] = args.high_weight
+            if args.medium_weight is not None:
+                config.priority_weights['MEDIUM'] = args.medium_weight
+            if args.low_weight is not None:
+                config.priority_weights['LOW'] = args.low_weight
+            if args.info_weight is not None:
+                config.priority_weights['INFO'] = args.info_weight
+            
+            # Re-validate configuration after modifications
+            config.__post_init__()
+            
+            # Set environment variable for configuration path if saving config
+            if args.config:
+                os.environ['MULE_GUARDIAN_CONFIG'] = args.config
+        
         agent = MuleSoftCodeReviewAgent(args.project_path, args.ruleset_path)
         report = agent.run_review(args.output)
         
