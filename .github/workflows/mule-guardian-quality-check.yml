@@ -401,36 +401,86 @@ jobs:
         find . -name "*.pyc" -delete
         find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
         
-        # 🔧 CRITICAL FIX: Remove problematic files BEFORE analysis (like UI does)
-        echo "🔧 REMOVING PROBLEMATIC FILES (matching UI behavior):"
-        echo "  Temporarily removing files that should not be analyzed..."
+        # 🔧 CRITICAL FIX: Apply EXACT UI exclusion logic (comprehensive exclusions)
+        echo "🔧 APPLYING UI EXCLUSION LOGIC (comprehensive file filtering):"
+        echo "  Creating backup directory for excluded files..."
+        mkdir -p .excluded_files_backup
         
-        # Move ruleset files out of analysis scope (they get analyzed as Mule code!)
-        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
-          mv comprehensive-mulesoft-ruleset-no-debug.xml comprehensive-mulesoft-ruleset-no-debug.xml.TEMP
-          echo "  ✅ Moved ruleset file out of analysis scope"
-        fi
+        # Move files matching UI exclusion patterns OUT of analysis scope
+        echo "  Excluding files matching UI patterns..."
+        EXCLUDED_COUNT=0
         
-        if [ -f "mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
-          mv mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml.TEMP
-          echo "  ✅ Moved mule-guardian ruleset file out of analysis scope"
-        fi
+        # 1. Exclude ruleset files (analyzed as Mule code by mistake)
+        find . -name "comprehensive-mulesoft-ruleset-no-debug.xml" -type f | while read file; do
+          if [[ "$file" != "./comprehensive-mulesoft-ruleset-no-debug.xml" ]]; then
+            mv "$file" ".excluded_files_backup/$(basename "$file").$(date +%s)"
+            echo "    ✅ Excluded: $file (ruleset)"
+            ((EXCLUDED_COUNT++))
+          fi
+        done
         
-        # Remove workflow files from analysis scope  
+        # 2. Exclude settings.xml files (UI pattern: **/settings.xml)
+        find . -name "settings.xml" -type f | while read file; do
+          mv "$file" ".excluded_files_backup/$(basename "$file").$(date +%s)"
+          echo "    ✅ Excluded: $file (settings)"
+          ((EXCLUDED_COUNT++))
+        done
+        
+        # 3. Exclude application-types.xml files (UI pattern: **/application-types.xml)
+        find . -name "application-types.xml" -type f | while read file; do
+          mv "$file" ".excluded_files_backup/$(basename "$file").$(date +%s)"
+          echo "    ✅ Excluded: $file (application-types)"
+          ((EXCLUDED_COUNT++))
+        done
+        
+        # 4. Exclude target directories (UI pattern: target/**, **/target/**)
+        find . -path "*/target/*" -name "*.xml" -type f | while read file; do
+          mv "$file" ".excluded_files_backup/$(basename "$file").$(date +%s)"
+          echo "    ✅ Excluded: $file (target dir)"
+          ((EXCLUDED_COUNT++))
+        done
+        
+        # 5. Exclude log files (UI pattern: **/*.log)
+        find . -name "*.log" -type f | while read file; do
+          mv "$file" ".excluded_files_backup/$(basename "$file").$(date +%s)"
+          echo "    ✅ Excluded: $file (log file)"
+          ((EXCLUDED_COUNT++))
+        done
+        
+        # 6. Exclude build/dist directories (UI patterns: **/build/**, **/dist/**)
+        find . -path "*/build/*" -name "*.xml" -type f -o -path "*/dist/*" -name "*.xml" -type f | while read file; do
+          mv "$file" ".excluded_files_backup/$(basename "$file").$(date +%s)"
+          echo "    ✅ Excluded: $file (build/dist)"
+          ((EXCLUDED_COUNT++))
+        done
+        
+        # 7. Exclude IDE directories (UI patterns: **/.idea/**, **/.vscode/**)
+        find . -path "*/.idea/*" -name "*.xml" -type f -o -path "*/.vscode/*" -name "*.xml" -type f | while read file; do
+          mv "$file" ".excluded_files_backup/$(basename "$file").$(date +%s)"
+          echo "    ✅ Excluded: $file (IDE)"
+          ((EXCLUDED_COUNT++))
+        done
+        
+        # 8. Exclude workflow files from analysis scope  
         if [ -f "mule-guardian-quality-check.yml" ]; then
-          mv mule-guardian-quality-check.yml mule-guardian-quality-check.yml.TEMP
-          echo "  ✅ Moved workflow file out of analysis scope"
+          mv mule-guardian-quality-check.yml .excluded_files_backup/
+          echo "    ✅ Excluded: workflow file"
+          ((EXCLUDED_COUNT++))
         fi
         
-        # Restore ruleset file for actual PMD execution
-        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml.TEMP" ]; then
-          mv comprehensive-mulesoft-ruleset-no-debug.xml.TEMP comprehensive-mulesoft-ruleset-no-debug.xml
-          echo "  ✅ Restored ruleset file for PMD execution"
-        fi
+        echo "  📊 Files after UI-style exclusions:"
+        REMAINING_FILES=$(find "${{ inputs.analysis_target }}" -name "*.xml" -type f | wc -l)
+        echo "    Total XML files remaining: $REMAINING_FILES"
+        echo "    Files to be analyzed:"
+        find "${{ inputs.analysis_target }}" -name "*.xml" -type f | head -10
         
-        echo "  📊 Files remaining for analysis:"
-        find "${{ inputs.analysis_target }}" -name "*.xml" -type f | wc -l
-        find "${{ inputs.analysis_target }}" -name "*.xml" -type f | head -5
+        # Ensure main ruleset file exists for PMD execution (not excluded)
+        if [ ! -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          if [ -f "mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+            cp "mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml" "comprehensive-mulesoft-ruleset-no-debug.xml"
+            echo "    ✅ Restored main ruleset file for PMD execution"
+          fi
+        fi
         
         # Run the analysis and capture output
         echo "🔍 Starting Mule Guardian analysis with ENHANCED DIAGNOSTICS..."
