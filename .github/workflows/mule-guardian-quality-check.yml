@@ -484,7 +484,8 @@ jobs:
         echo "  info_weight: ${{ inputs.info_weight }}"
         echo ""
         echo "🔍 TESTING COMPLIANCE CONFIG:"
-        python3 -c "
+        # Create temporary Python script for debugging
+        cat > debug_compliance.py << 'EOF'
 import sys
 sys.path.append('.')
 try:
@@ -514,7 +515,9 @@ except Exception as e:
     print(f'❌ ERROR with compliance_config: {e}')
     import traceback
     traceback.print_exc()
-"
+EOF
+        python3 debug_compliance.py
+        rm -f debug_compliance.py
         echo "=================================="
         
         # 🔧 CRITICAL FIX: Force Unified Compliance Calculation
