@@ -237,7 +237,7 @@ jobs:
         echo 'export PATH="$JAVA_HOME/bin:$PATH"' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
         echo '' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
         echo '# Execute PMD directly with correct main class and classpath' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
-        echo "exec \"\$JAVA_HOME/bin/java\" -cp \"/opt/pmd/lib/*\" $WORKING_MAIN_CLASS \"\$@\"" | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
+        echo 'exec "$JAVA_HOME/bin/java" -cp "/opt/pmd/lib/*" '$WORKING_MAIN_CLASS' "$@"' | sudo tee -a /opt/pmd/bin/pmd-bulletproof > /dev/null
         
         sudo chmod +x /opt/pmd/bin/pmd-bulletproof
         
@@ -465,27 +465,27 @@ jobs:
           echo "📊 DEBUGGING ANALYSIS RESULTS:"
           echo "================================"
           echo "📋 Raw JSON Extract:"
-          echo "  Total Violations: $(grep -o '"total_violations":[[:space:]]*[0-9]*' quality-report.json | grep -o '[0-9]*')"
-          echo "  Stored Compliance: $(grep -o '"compliance_percentage":[[:space:]]*[0-9.]*' quality-report.json | grep -o '[0-9.]*')"
+          echo "  Total Violations: $(grep -o '\"total_violations\":[[:space:]]*[0-9]*' quality-report.json | grep -o '[0-9]*')"
+          echo "  Stored Compliance: $(grep -o '\"compliance_percentage\":[[:space:]]*[0-9.]*' quality-report.json | grep -o '[0-9.]*')"
           echo ""
           echo "📊 Priority Breakdown:"
-          python3 -c '
+          cat > show_priorities.py << 'PY_EOF'
 import json
-try:
-    with open("quality-report.json", "r") as f:
-        data = json.load(f)
-    priorities = data.get("violations_by_priority", {})
-    for priority, count in priorities.items():
-        print(f"  {priority}: {count}")
-    print(f"  TOTAL: {sum(priorities.values())}")
-except Exception as e:
-    print(f"  Error reading JSON: {e}")
-'
+with open("quality-report.json", "r") as f:
+    data = json.load(f)
+priorities = data.get("violations_by_priority", {})
+for priority, count in priorities.items():
+    print(f"  {priority}: {count}")
+print(f"  TOTAL: {sum(priorities.values())}")
+PY_EOF
+          python3 show_priorities.py
+          rm -f show_priorities.py
           
           # Force unified compliance calculation (ignore stored values)
           echo ""
           echo "🔧 FORCING UNIFIED COMPLIANCE CALCULATION"
-          UNIFIED_COMPLIANCE=$(python3 -c '
+          # Create a temporary Python script for complex calculation
+          cat > calc_compliance.py << 'SCRIPT_EOF'
 import json
 import sys
 sys.path.append(".")
@@ -518,7 +518,10 @@ except ImportError as e:
 except Exception as e:
     print(f"ERROR: {e}")
     sys.exit(1)
-')
+SCRIPT_EOF
+          
+          UNIFIED_COMPLIANCE=$(python3 calc_compliance.py)
+          rm -f calc_compliance.py
           
           if [ $? -eq 0 ] && [ ! -z "$UNIFIED_COMPLIANCE" ]; then
             echo "✅ UNIFIED CALCULATION SUCCESS: $UNIFIED_COMPLIANCE%"
@@ -530,12 +533,7 @@ except Exception as e:
           fi
           
           # Extract total violations for validation
-          TOTAL_VIOLATIONS=$(python3 -c '
-import json
-with open("quality-report.json", "r") as f:
-    data = json.load(f)
-print(data.get("total_violations", 0))
-')
+          TOTAL_VIOLATIONS=$(python3 -c "import json; print(json.load(open('quality-report.json')).get('total_violations', 0))")
           
           # Validate logical consistency
           echo ""
