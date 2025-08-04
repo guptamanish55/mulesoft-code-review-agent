@@ -483,17 +483,47 @@ jobs:
         echo "  low_weight: ${{ inputs.low_weight }}"
         echo "  info_weight: ${{ inputs.info_weight }}"
         echo ""
-        echo "🔍 TESTING COMPLIANCE CONFIG:"
-        # Test if compliance_config can be imported
-        python3 -c "import sys; sys.path.append('.'); from compliance_config import ComplianceConfig; print('✅ compliance_config imported successfully')" || echo "❌ Failed to import compliance_config"
+        echo "🔍 PMD ANALYSIS NORMALIZATION DEBUG:"
+        echo "======================================"
         
-        # Test default config
-        python3 -c "import sys; sys.path.append('.'); from compliance_config import ComplianceConfig; c=ComplianceConfig(); print(f'✅ Default config: file={c.file_based_weight}%, severity={c.severity_based_weight}%'); print(f'✅ Default priorities: {c.priority_weights}')" || echo "❌ Failed to create default config"
+        # Debug PMD version and location
+        echo "📋 PMD Environment:"
+        which pmd || echo "❌ PMD not in PATH"
+        pmd --version || echo "❌ Could not get PMD version"
+        echo "PMD_HOME: $PMD_HOME"
+        ls -la /opt/pmd/bin/ || echo "❌ No PMD in /opt/pmd/bin/"
         
-        # Test configured config with workflow inputs
-        echo "🔍 Testing configured config with inputs:"
-        echo "  Creating config with file_weight=${{ inputs.file_weight }}, severity_weight=${{ inputs.severity_weight }}"
-        python3 -c "import sys; sys.path.append('.'); from compliance_config import ComplianceConfig; c=ComplianceConfig(file_based_weight=${{ inputs.file_weight }}, severity_based_weight=${{ inputs.severity_weight }}, priority_weights={'HIGH': ${{ inputs.high_weight }}, 'MEDIUM': ${{ inputs.medium_weight }}, 'LOW': ${{ inputs.low_weight }}, 'INFO': ${{ inputs.info_weight }}}); print(f'✅ Configured config: file={c.file_based_weight}%, severity={c.severity_based_weight}%'); print(f'✅ Configured priorities: {c.priority_weights}')" || echo "❌ Failed to create configured config"
+        # Debug ruleset being used
+        echo ""
+        echo "📋 Ruleset Analysis:"
+        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          echo "✅ Ruleset file found: comprehensive-mulesoft-ruleset-no-debug.xml"
+          echo "  File size: $(wc -c < comprehensive-mulesoft-ruleset-no-debug.xml) bytes"
+          echo "  Number of rules: $(grep -c '<rule' comprehensive-mulesoft-ruleset-no-debug.xml || echo 'unknown')"
+          echo "  First few rules:"
+          grep '<rule' comprehensive-mulesoft-ruleset-no-debug.xml | head -3 || echo "  Could not extract rules"
+        else
+          echo "❌ Ruleset file NOT found"
+        fi
+        
+        # Debug files being analyzed
+        echo ""
+        echo "📋 File Analysis Scope:"
+        echo "  Working directory: $(pwd)"
+        echo "  Analysis target: ${{ inputs.analysis_target }}"
+        echo "  Files found for analysis:"
+        find ${{ inputs.analysis_target }} -name "*.xml" -type f | head -10 || echo "  No XML files found"
+        echo "  Total XML files: $(find ${{ inputs.analysis_target }} -name "*.xml" -type f | wc -l)"
+        
+        # Debug PMD command that will be executed
+        echo ""
+        echo "📋 PMD Command Debug:"
+        echo "  PMD executable: $(which pmd || echo '/opt/pmd/bin/pmd')"
+        echo "  Target directory: ${{ inputs.analysis_target }}"
+        echo "  Ruleset: comprehensive-mulesoft-ruleset-no-debug.xml"
+        echo "  Output format: json"
+        
+        echo "======================================"
         echo "=================================="
         
         # 🔧 CRITICAL FIX: Force Unified Compliance Calculation
