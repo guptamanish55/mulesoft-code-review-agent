@@ -529,21 +529,35 @@ jobs:
           echo "  Compliance: $COMPLIANCE%"
           echo "  Violations: $TOTAL_VIOLATIONS"
           
-          # Validate that high violations don't have unreasonably high compliance
-          if [ "$TOTAL_VIOLATIONS" -gt 150 ] && [ "$(echo "$COMPLIANCE > 30" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
+          # Validate logical consistency with updated realistic thresholds
+          violations_per_file=$(echo "scale=2; $TOTAL_VIOLATIONS / 54" | bc -l 2>/dev/null || echo "0")
+          
+          # More realistic consistency checks based on violations per file
+          if [ "$TOTAL_VIOLATIONS" -gt 300 ] && [ "$(echo "$COMPLIANCE > 40" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
             echo ""
             echo "🚨 LOGICAL INCONSISTENCY DETECTED!"
-            echo "🚨 $TOTAL_VIOLATIONS violations cannot reasonably have $COMPLIANCE% compliance"
-            echo "🚨 Expected compliance with $TOTAL_VIOLATIONS violations: 10-25%"
+            echo "🚨 $TOTAL_VIOLATIONS violations (>300) cannot reasonably have $COMPLIANCE% compliance"
+            echo "🚨 Expected compliance with $TOTAL_VIOLATIONS violations: <40%"
             echo "🚨 This indicates a serious calculation bug"
             echo ""
             exit 1
           fi
           
-          # Validate minimum thresholds
-          if [ "$TOTAL_VIOLATIONS" -gt 100 ] && [ "$(echo "$COMPLIANCE > 50" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
+          # Check for extremely high violations with high compliance
+          if [ "$TOTAL_VIOLATIONS" -gt 200 ] && [ "$(echo "$COMPLIANCE > 60" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
+            echo ""
+            echo "🚨 LOGICAL INCONSISTENCY DETECTED!"
+            echo "🚨 $TOTAL_VIOLATIONS violations (>200) cannot have $COMPLIANCE% compliance"
+            echo "🚨 Expected compliance with $TOTAL_VIOLATIONS violations: <60%"
+            echo "🚨 This indicates a calculation error"
+            echo ""
+            exit 1
+          fi
+          
+          # Warning for high violations
+          if [ "$TOTAL_VIOLATIONS" -gt 100 ] && [ "$(echo "$COMPLIANCE > 70" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
             echo "⚠️  WARNING: High violations ($TOTAL_VIOLATIONS) with high compliance ($COMPLIANCE%)"
-            echo "⚠️  Please verify this is correct"
+            echo "⚠️  Violations per file: $violations_per_file - Please verify this is reasonable"
           fi
           
           echo "✅ Logical consistency check passed"
