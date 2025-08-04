@@ -14,7 +14,7 @@ on:
         description: 'PMD version to use'
         required: false
         type: string
-        default: '7.0.0'
+        default: '7.15.0'
       analysis_target:
         description: 'Directory to analyze (relative to repo root)'
         required: false
