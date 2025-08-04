@@ -219,15 +219,44 @@ def calculate_compliance_percentage(report, config: Optional[ComplianceConfig] =
         
         # Calculate severity-adjusted compliance
         if files_with_violations_count > 0 and total_violations > 0:
-            # Use a more reasonable max score calculation based on violations per file
-            avg_violations_per_file = total_violations / files_with_violations_count
-            max_possible_score = total_files * avg_violations_per_file * max(config.priority_weights.values())
+            # More realistic severity penalty calculation
+            # Base penalty on violations per file with progressive scaling
+            violations_per_file = total_violations / total_files
             
-            if max_possible_score > 0:
-                severity_penalty = min(100, (total_severity_score / max_possible_score) * 100)
-                severity_adjusted_compliance = max(0, 100 - severity_penalty)
+            # Progressive penalty scale: more violations per file = higher penalty
+            if violations_per_file <= 1:
+                base_penalty = violations_per_file * 15  # Up to 15% penalty
+            elif violations_per_file <= 3:
+                base_penalty = 15 + (violations_per_file - 1) * 20  # 15-55% penalty
+            elif violations_per_file <= 5:
+                base_penalty = 55 + (violations_per_file - 3) * 15  # 55-85% penalty
             else:
-                severity_adjusted_compliance = 100
+                base_penalty = 85 + min(15, (violations_per_file - 5) * 3)  # 85-100% penalty
+            
+            # Apply severity weighting
+            high_weight = config.priority_weights.get('HIGH', 10)
+            medium_weight = config.priority_weights.get('MEDIUM', 5)
+            low_weight = config.priority_weights.get('LOW', 2)
+            
+            # Calculate weighted severity multiplier
+            high_violations = violations_by_priority.get('HIGH', 0)
+            medium_violations = violations_by_priority.get('MEDIUM', 0)
+            low_violations = violations_by_priority.get('LOW', 0)
+            
+            if total_violations > 0:
+                severity_multiplier = (
+                    (high_violations * high_weight + 
+                     medium_violations * medium_weight + 
+                     low_violations * low_weight) / 
+                    (total_violations * low_weight)  # Normalize against LOW weight baseline
+                )
+                severity_multiplier = min(2.0, severity_multiplier)  # Cap at 2x multiplier
+            else:
+                severity_multiplier = 1.0
+            
+            # Apply severity multiplier to base penalty
+            final_penalty = min(100, base_penalty * severity_multiplier)
+            severity_adjusted_compliance = max(0, 100 - final_penalty)
         else:
             severity_adjusted_compliance = 100
         
