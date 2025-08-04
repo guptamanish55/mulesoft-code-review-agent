@@ -168,16 +168,16 @@ jobs:
         echo "  JAVA_HOME: $JAVA_HOME"
         echo "  Java executable: $(which java)"
         
-        # Download GUARANTEED WORKING PMD version (6.55.0)
-        echo "📥 Downloading PMD 6.55.0 (guaranteed working)..."
-        wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F6.55.0/pmd-bin-6.55.0.zip"
-        unzip pmd-bin-6.55.0.zip
+        # Download PMD using the specified version parameter
+        echo "📥 Downloading PMD ${{ inputs.pmd_version }}..."
+        wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ inputs.pmd_version }}/pmd-bin-${{ inputs.pmd_version }}.zip"
+        unzip pmd-bin-${{ inputs.pmd_version }}.zip
         
         # Clean installation
         sudo rm -rf /opt/pmd
-        sudo mv pmd-bin-6.55.0 /opt/pmd
+        sudo mv pmd-bin-${{ inputs.pmd_version }} /opt/pmd
         
-        echo "✅ PMD 6.55.0 installed to /opt/pmd"
+        echo "✅ PMD ${{ inputs.pmd_version }} installed to /opt/pmd"
         
         # Verify installation files
         echo "🔍 PMD installation verification:"
@@ -185,14 +185,15 @@ jobs:
         echo "  PMD lib directory: $(ls -la /opt/pmd/lib/ | wc -l) JAR files"
         echo "  PMD bin directory: $(ls -la /opt/pmd/bin/ | wc -l) executables"
         
-        # CRITICAL: Find the correct PMD main class for 6.55.0
-        echo "🔍 Identifying correct PMD main class for version 6.55.0..."
+        # CRITICAL: Find the correct PMD main class for version ${{ inputs.pmd_version }}
+        echo "🔍 Identifying correct PMD main class for version ${{ inputs.pmd_version }}..."
         
-        # Test main classes in order of likelihood for PMD 6.55.0
+        # Test main classes in order of likelihood for PMD ${{ inputs.pmd_version }}
         MAIN_CLASSES=(
-          "net.sourceforge.pmd.PMD"
-          "net.sourceforge.pmd.cli.PMD"
-          "net.sourceforge.pmd.cli.PmdCli"
+          "net.sourceforge.pmd.PMD"           # PMD 7.x (latest)
+          "net.sourceforge.pmd.cli.PMD"       # PMD 7.x alternative
+          "net.sourceforge.pmd.cli.PmdCli"    # PMD 6.x legacy
+          "net.sourceforge.pmd.PMDCommandLine" # PMD 6.x alternative
         )
         
         WORKING_MAIN_CLASS=""
