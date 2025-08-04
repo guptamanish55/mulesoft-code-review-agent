@@ -457,112 +457,126 @@ jobs:
           echo "❓ Check the analysis_output.log for more details"
         fi
         
-        # Extract results from JSON report
+        # 🔧 CRITICAL FIX: Force Unified Compliance Calculation
         if [ -f "quality-report.json" ]; then
           echo "✅ Analysis completed successfully"
           
-          # Debug: Show JSON content to diagnose extraction issues
-          echo "🔍 DEBUG: JSON report content:"
-          head -20 quality-report.json || echo "Cannot read JSON file"
-          echo "🔍 JSON file size: $(wc -c < quality-report.json) bytes"
+          # Debug analysis data first
+          echo "📊 DEBUGGING ANALYSIS RESULTS:"
+          echo "================================"
+          echo "📋 Raw JSON Extract:"
+          echo "  Total Violations: $(grep -o '"total_violations":[[:space:]]*[0-9]*' quality-report.json | grep -o '[0-9]*')"
+          echo "  Stored Compliance: $(grep -o '"compliance_percentage":[[:space:]]*[0-9.]*' quality-report.json | grep -o '[0-9.]*')"
+          echo ""
+          echo "📊 Priority Breakdown:"
+          python3 -c '
+import json
+try:
+    with open("quality-report.json", "r") as f:
+        data = json.load(f)
+    priorities = data.get("violations_by_priority", {})
+    for priority, count in priorities.items():
+        print(f"  {priority}: {count}")
+    print(f"  TOTAL: {sum(priorities.values())}")
+except Exception as e:
+    print(f"  Error reading JSON: {e}")
+'
           
-          # Extract compliance score with multiple robust patterns
-          COMPLIANCE=$(grep -o '"compliance_percentage":[[:space:]]*[0-9.]*' quality-report.json | grep -o '[0-9.]*' | head -1)
-          TOTAL_VIOLATIONS=$(grep -o '"total_violations":[[:space:]]*[0-9]*' quality-report.json | grep -o '[0-9]*' | head -1)
+          # Force unified compliance calculation (ignore stored values)
+          echo ""
+          echo "🔧 FORCING UNIFIED COMPLIANCE CALCULATION"
+          UNIFIED_COMPLIANCE=$(python3 -c '
+import json
+import sys
+sys.path.append(".")
+
+try:
+    from compliance_config import calculate_compliance_percentage, ComplianceConfig
+    
+    with open("quality-report.json", "r") as f:
+        data = json.load(f)
+    
+    class MockReport:
+        def __init__(self, data):
+            self.files_scanned = data.get("files_scanned", 0)
+            self.total_violations = data.get("total_violations", 0)
+            self.violations_by_priority = data.get("violations_by_priority", {})
+            self.violations = []
+            for v in data.get("violations", []):
+                violation = type("MockViolation", (), {})()
+                violation.file_path = v.get("file_path", "")
+                self.violations.append(violation)
+    
+    report = MockReport(data)
+    config = ComplianceConfig()
+    compliance = calculate_compliance_percentage(report, config)
+    print(f"{compliance:.2f}")
+    
+except ImportError as e:
+    print("ERROR: compliance_config not available")
+    sys.exit(1)
+except Exception as e:
+    print(f"ERROR: {e}")
+    sys.exit(1)
+')
           
-          echo "🔍 DEBUG: Initial extraction:"
-          echo "🔍   COMPLIANCE: '$COMPLIANCE'"
-          echo "🔍   TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
-          
-          # Try multiple alternative patterns if extraction fails
-          if [ -z "$COMPLIANCE" ]; then
-            echo "🔍 Trying alternative compliance extraction patterns..."
-            COMPLIANCE=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('compliance_percentage', ''))" 2>/dev/null)
-            echo "🔍   Python JSON extraction COMPLIANCE: '$COMPLIANCE'"
-          fi
-          
-          if [ -z "$TOTAL_VIOLATIONS" ]; then
-            echo "🔍 Trying alternative total_violations extraction patterns..."
-            TOTAL_VIOLATIONS=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('total_violations', ''))" 2>/dev/null)
-            echo "🔍   Python JSON extraction TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
-          fi
-          
-          # Additional fallback using jq if available
-          if [ -z "$COMPLIANCE" ] && command -v jq >/dev/null 2>&1; then
-            COMPLIANCE=$(jq -r '.compliance_percentage // empty' quality-report.json 2>/dev/null)
-            echo "🔍   jq extraction COMPLIANCE: '$COMPLIANCE'"
-          fi
-          
-          if [ -z "$TOTAL_VIOLATIONS" ] && command -v jq >/dev/null 2>&1; then
-            TOTAL_VIOLATIONS=$(jq -r '.total_violations // empty' quality-report.json 2>/dev/null)
-            echo "🔍   jq extraction TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
-          fi
-          
-          echo "🔍 FINAL DEBUG: Values before fallback calculation:"
-          echo "🔍   COMPLIANCE: '$COMPLIANCE'"
-          echo "🔍   TOTAL_VIOLATIONS: '$TOTAL_VIOLATIONS'"
-          
-          # Validate extracted values
-          if [ -n "$COMPLIANCE" ] && [ -n "$TOTAL_VIOLATIONS" ]; then
-            echo "✅ Successfully extracted compliance and violations from JSON"
-            echo "✅   Compliance: $COMPLIANCE%"
-            echo "✅   Total Violations: $TOTAL_VIOLATIONS"
+          if [ $? -eq 0 ] && [ ! -z "$UNIFIED_COMPLIANCE" ]; then
+            echo "✅ UNIFIED CALCULATION SUCCESS: $UNIFIED_COMPLIANCE%"
+            COMPLIANCE=$UNIFIED_COMPLIANCE
           else
-            echo "🚨 JSON extraction failed, attempting fallback calculation..."
-            
-            # Fallback calculation using violations by priority
-            HIGH_COUNT=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('violations_by_priority', {}).get('HIGH', 0))" 2>/dev/null || echo "0")
-            MEDIUM_COUNT=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('violations_by_priority', {}).get('MEDIUM', 0))" 2>/dev/null || echo "0")
-            LOW_COUNT=$(python3 -c "import json; data=json.load(open('quality-report.json')); print(data.get('violations_by_priority', {}).get('LOW', 0))" 2>/dev/null || echo "0")
-            
-            echo "🔍 Fallback priority counts:"
-            echo "🔍   HIGH: $HIGH_COUNT"
-            echo "🔍   MEDIUM: $MEDIUM_COUNT"
-            echo "🔍   LOW: $LOW_COUNT"
-            
-            # Calculate total violations if not found
-            if [ -z "$TOTAL_VIOLATIONS" ]; then
-              TOTAL_VIOLATIONS=$((HIGH_COUNT + MEDIUM_COUNT + LOW_COUNT))
-              echo "🔍 Calculated TOTAL_VIOLATIONS: $TOTAL_VIOLATIONS"
-            fi
-            
-            # Calculate compliance if not found using configured weights
-            if [ -z "$COMPLIANCE" ]; then
-              echo "🚨 CRITICAL: New configurable compliance system should have provided compliance score!"
-              echo "🚨 Falling back to legacy calculation - this should not happen with updated agent"
-              DEDUCTION=$((HIGH_COUNT*3 + MEDIUM_COUNT*2 + LOW_COUNT*1))
-              COMPLIANCE=$((100 - DEDUCTION))
-              
-              # Minimum compliance of 20 (same as Python logic)
-              if [ $COMPLIANCE -lt 20 ]; then
-                COMPLIANCE=20
-              fi
-              echo "🔍 Legacy calculated COMPLIANCE: $COMPLIANCE%"
-            fi
+            echo "❌ UNIFIED CALCULATION FAILED - WORKFLOW WILL FAIL"
+            echo "❌ This prevents misleading compliance scores"
+            exit 1
           fi
           
-          # Final validation
-          if [ -z "$COMPLIANCE" ]; then
-            COMPLIANCE=100
-            echo "🚨 WARNING: Could not determine compliance, defaulting to 100%"
+          # Extract total violations for validation
+          TOTAL_VIOLATIONS=$(python3 -c '
+import json
+with open("quality-report.json", "r") as f:
+    data = json.load(f)
+print(data.get("total_violations", 0))
+')
+          
+          # Validate logical consistency
+          echo ""
+          echo "🔍 LOGICAL CONSISTENCY CHECK:"
+          echo "  Compliance: $COMPLIANCE%"
+          echo "  Violations: $TOTAL_VIOLATIONS"
+          
+          # Validate that high violations don't have unreasonably high compliance
+          if [ "$TOTAL_VIOLATIONS" -gt 150 ] && [ "$(echo "$COMPLIANCE > 30" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
+            echo ""
+            echo "🚨 LOGICAL INCONSISTENCY DETECTED!"
+            echo "🚨 $TOTAL_VIOLATIONS violations cannot reasonably have $COMPLIANCE% compliance"
+            echo "🚨 Expected compliance with $TOTAL_VIOLATIONS violations: 10-25%"
+            echo "🚨 This indicates a serious calculation bug"
+            echo ""
+            exit 1
           fi
           
-          if [ -z "$TOTAL_VIOLATIONS" ]; then
-            TOTAL_VIOLATIONS=0
-            echo "🚨 WARNING: Could not determine total violations, defaulting to 0"
+          # Validate minimum thresholds
+          if [ "$TOTAL_VIOLATIONS" -gt 100 ] && [ "$(echo "$COMPLIANCE > 50" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
+            echo "⚠️  WARNING: High violations ($TOTAL_VIOLATIONS) with high compliance ($COMPLIANCE%)"
+            echo "⚠️  Please verify this is correct"
           fi
           
-          echo "🔍 FINAL VALUES:"
-          echo "🔍   Final COMPLIANCE: $COMPLIANCE%"
-          echo "🔍   Final TOTAL_VIOLATIONS: $TOTAL_VIOLATIONS"
+          echo "✅ Logical consistency check passed"
           
           echo "COMPLIANCE_SCORE=$COMPLIANCE" >> $GITHUB_OUTPUT
           echo "TOTAL_VIOLATIONS=$TOTAL_VIOLATIONS" >> $GITHUB_OUTPUT
           
-          echo "🛡️ Configurable Compliance Results:"
-          echo "   - Compliance Score: $COMPLIANCE% (using ${{ inputs.file_weight }}%/${{ inputs.severity_weight }}% weighting)"
-          echo "   - Total Violations: ${TOTAL_VIOLATIONS:-0}"
-          echo "   - Priority Weights: HIGH=${{ inputs.high_weight }}, MEDIUM=${{ inputs.medium_weight }}, LOW=${{ inputs.low_weight }}, INFO=${{ inputs.info_weight }}"
+          echo ""
+          echo "🛡️ VERIFIED COMPLIANCE RESULTS:"
+          echo "================================"
+          echo "✅ Compliance Score: $COMPLIANCE% (UNIFIED CALCULATION)"
+          echo "✅ Total Violations: $TOTAL_VIOLATIONS"
+          echo "✅ Calculation Method: Configurable Unified"
+          echo "✅ Logical Consistency: VALIDATED"
+          echo ""
+          echo "🔧 Configuration Used:"
+          echo "  - File-based weight: ${{ inputs.file_weight }}%"
+          echo "  - Severity-based weight: ${{ inputs.severity_weight }}%"
+          echo "  - Priority weights: HIGH=${{ inputs.high_weight }}, MEDIUM=${{ inputs.medium_weight }}, LOW=${{ inputs.low_weight }}, INFO=${{ inputs.info_weight }}"
           
         else
           echo "❌ Analysis failed - no report generated"
