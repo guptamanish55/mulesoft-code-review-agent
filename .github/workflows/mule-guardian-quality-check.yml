@@ -401,6 +401,37 @@ jobs:
         find . -name "*.pyc" -delete
         find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
         
+        # 🔧 CRITICAL FIX: Remove problematic files BEFORE analysis (like UI does)
+        echo "🔧 REMOVING PROBLEMATIC FILES (matching UI behavior):"
+        echo "  Temporarily removing files that should not be analyzed..."
+        
+        # Move ruleset files out of analysis scope (they get analyzed as Mule code!)
+        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          mv comprehensive-mulesoft-ruleset-no-debug.xml comprehensive-mulesoft-ruleset-no-debug.xml.TEMP
+          echo "  ✅ Moved ruleset file out of analysis scope"
+        fi
+        
+        if [ -f "mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          mv mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml.TEMP
+          echo "  ✅ Moved mule-guardian ruleset file out of analysis scope"
+        fi
+        
+        # Remove workflow files from analysis scope  
+        if [ -f "mule-guardian-quality-check.yml" ]; then
+          mv mule-guardian-quality-check.yml mule-guardian-quality-check.yml.TEMP
+          echo "  ✅ Moved workflow file out of analysis scope"
+        fi
+        
+        # Restore ruleset file for actual PMD execution
+        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml.TEMP" ]; then
+          mv comprehensive-mulesoft-ruleset-no-debug.xml.TEMP comprehensive-mulesoft-ruleset-no-debug.xml
+          echo "  ✅ Restored ruleset file for PMD execution"
+        fi
+        
+        echo "  📊 Files remaining for analysis:"
+        find "${{ inputs.analysis_target }}" -name "*.xml" -type f | wc -l
+        find "${{ inputs.analysis_target }}" -name "*.xml" -type f | head -5
+        
         # Run the analysis and capture output
         echo "🔍 Starting Mule Guardian analysis with ENHANCED DIAGNOSTICS..."
         echo "🚀 EXPECTED: Should see 'PMD 6.x FORMAT' messages and NO 'check --file-list' errors"
@@ -506,14 +537,66 @@ jobs:
           echo "❌ Ruleset file NOT found"
         fi
         
-        # Debug files being analyzed
+        # Debug files being analyzed and create proper file list (like UI does)
         echo ""
         echo "📋 File Analysis Scope:"
         echo "  Working directory: $(pwd)"
         echo "  Analysis target: ${{ inputs.analysis_target }}"
-        echo "  Files found for analysis:"
-        find ${{ inputs.analysis_target }} -name "*.xml" -type f | head -10 || echo "  No XML files found"
-        echo "  Total XML files: $(find ${{ inputs.analysis_target }} -name "*.xml" -type f | wc -l)"
+        
+        # Create smart file list (mimicking UI's _create_file_list method)
+        echo "  Creating smart file list (excluding rulesets, target/, etc.)..."
+        python3 -c "
+import os
+from pathlib import Path
+
+# Define exclusion patterns (from UI code)
+excluded_patterns = [
+    'target/', '**/target/**', 'target', '**/target',
+    '**/settings.xml', '**/application-types.xml',
+    '.git/', 'node_modules/', '.m2/', 'logs/', '*.log',
+    '.DS_Store', 'Thumbs.db', 'build/', 'dist/',
+    '.idea/', '.vscode/', 'bin/', 'out/', 
+    'comprehensive-mulesoft-ruleset-no-debug.xml',  # EXCLUDE RULESET!
+    'mule-guardian-quality-check.yml',  # EXCLUDE WORKFLOW!
+    'mule-guardian/'  # EXCLUDE COPIED FILES!
+]
+
+def is_excluded(file_path):
+    file_str = str(file_path)
+    # Check if file matches any exclusion pattern
+    for pattern in excluded_patterns:
+        if pattern.replace('**/','').replace('**','') in file_str:
+            return True
+        if file_str.endswith(pattern.replace('**/','').replace('**','')):
+            return True
+    return False
+
+# Find files to analyze (XML only for PMD)
+project_path = Path('${{ inputs.analysis_target }}')
+files_to_analyze = []
+excluded_files = []
+
+for file_path in project_path.rglob('*.xml'):
+    if file_path.is_file():
+        if is_excluded(file_path):
+            excluded_files.append(str(file_path))
+        else:
+            files_to_analyze.append(str(file_path))
+
+# Write file list
+with open('pmd-files.txt', 'w') as f:
+    f.write('\n'.join(sorted(files_to_analyze)))
+
+print(f'  Files to analyze: {len(files_to_analyze)}')
+print(f'  Files excluded: {len(excluded_files)}')
+print('  First 10 files to analyze:')
+for f in sorted(files_to_analyze)[:10]:
+    print(f'    {f}')
+if excluded_files:
+    print('  First 5 excluded files:')
+    for f in sorted(excluded_files)[:5]:
+        print(f'    {f} (excluded)')
+"
         
         # Debug PMD command that will be executed
         echo ""
