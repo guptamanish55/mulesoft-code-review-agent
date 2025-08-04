@@ -469,56 +469,44 @@ jobs:
           echo "  Stored Compliance: $(grep -o '\"compliance_percentage\":[[:space:]]*[0-9.]*' quality-report.json | grep -o '[0-9.]*')"
           echo ""
           echo "📊 Priority Breakdown:"
-          cat > show_priorities.py << 'PY_EOF'
-import json
-with open("quality-report.json", "r") as f:
-    data = json.load(f)
-priorities = data.get("violations_by_priority", {})
-for priority, count in priorities.items():
-    print(f"  {priority}: {count}")
-print(f"  TOTAL: {sum(priorities.values())}")
-PY_EOF
-          python3 show_priorities.py
-          rm -f show_priorities.py
+          python3 -c "import json; data=json.load(open('quality-report.json')); priorities=data.get('violations_by_priority', {}); [print('  ' + str(p) + ': ' + str(c)) for p,c in priorities.items()]; print('  TOTAL: ' + str(sum(priorities.values())))"
           
           # Force unified compliance calculation (ignore stored values)
           echo ""
           echo "🔧 FORCING UNIFIED COMPLIANCE CALCULATION"
-          # Create a temporary Python script for complex calculation
-          cat > calc_compliance.py << 'SCRIPT_EOF'
-import json
-import sys
-sys.path.append(".")
-
-try:
-    from compliance_config import calculate_compliance_percentage, ComplianceConfig
-    
-    with open("quality-report.json", "r") as f:
-        data = json.load(f)
-    
-    class MockReport:
-        def __init__(self, data):
-            self.files_scanned = data.get("files_scanned", 0)
-            self.total_violations = data.get("total_violations", 0)
-            self.violations_by_priority = data.get("violations_by_priority", {})
-            self.violations = []
-            for v in data.get("violations", []):
-                violation = type("MockViolation", (), {})()
-                violation.file_path = v.get("file_path", "")
-                self.violations.append(violation)
-    
-    report = MockReport(data)
-    config = ComplianceConfig()
-    compliance = calculate_compliance_percentage(report, config)
-    print(f"{compliance:.2f}")
-    
-except ImportError as e:
-    print("ERROR: compliance_config not available")
-    sys.exit(1)
-except Exception as e:
-    print(f"ERROR: {e}")
-    sys.exit(1)
-SCRIPT_EOF
+          # Create a temporary Python script for complex calculation using echo
+          echo 'import json' > calc_compliance.py
+          echo 'import sys' >> calc_compliance.py
+          echo 'sys.path.append(".")' >> calc_compliance.py
+          echo '' >> calc_compliance.py
+          echo 'try:' >> calc_compliance.py
+          echo '    from compliance_config import calculate_compliance_percentage, ComplianceConfig' >> calc_compliance.py
+          echo '    ' >> calc_compliance.py
+          echo '    with open("quality-report.json", "r") as f:' >> calc_compliance.py
+          echo '        data = json.load(f)' >> calc_compliance.py
+          echo '    ' >> calc_compliance.py
+          echo '    class MockReport:' >> calc_compliance.py
+          echo '        def __init__(self, data):' >> calc_compliance.py
+          echo '            self.files_scanned = data.get("files_scanned", 0)' >> calc_compliance.py
+          echo '            self.total_violations = data.get("total_violations", 0)' >> calc_compliance.py
+          echo '            self.violations_by_priority = data.get("violations_by_priority", {})' >> calc_compliance.py
+          echo '            self.violations = []' >> calc_compliance.py
+          echo '            for v in data.get("violations", []):' >> calc_compliance.py
+          echo '                violation = type("MockViolation", (), {})()' >> calc_compliance.py
+          echo '                violation.file_path = v.get("file_path", "")' >> calc_compliance.py
+          echo '                self.violations.append(violation)' >> calc_compliance.py
+          echo '    ' >> calc_compliance.py
+          echo '    report = MockReport(data)' >> calc_compliance.py
+          echo '    config = ComplianceConfig()' >> calc_compliance.py
+          echo '    compliance = calculate_compliance_percentage(report, config)' >> calc_compliance.py
+          echo '    print(f"{compliance:.2f}")' >> calc_compliance.py
+          echo '    ' >> calc_compliance.py
+          echo 'except ImportError as e:' >> calc_compliance.py
+          echo '    print("ERROR: compliance_config not available")' >> calc_compliance.py
+          echo '    sys.exit(1)' >> calc_compliance.py
+          echo 'except Exception as e:' >> calc_compliance.py
+          echo '    print(f"ERROR: {e}")' >> calc_compliance.py
+          echo '    sys.exit(1)' >> calc_compliance.py
           
           UNIFIED_COMPLIANCE=$(python3 calc_compliance.py)
           rm -f calc_compliance.py
