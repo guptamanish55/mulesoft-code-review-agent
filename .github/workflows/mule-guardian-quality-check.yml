@@ -102,7 +102,7 @@ jobs:
     - name: Get Mule Guardian Core Files
       uses: actions/checkout@v4
       with:
-        repository: ${{ github.repository_owner }}/mulesoft-code-review-agent  # ← Change this to your common repo name
+        repository: ${{ github.repository_owner }}/mulesoft-code-review-agent  # ← Updated to match your actual repo
         path: mule-guardian
         ref: main
         
