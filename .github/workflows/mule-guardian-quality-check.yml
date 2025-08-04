@@ -471,6 +471,52 @@ jobs:
           echo "❓ Check the analysis_output.log for more details"
         fi
         
+        # 🔍 DEBUG: Check Configuration Parameters (TEMPORARY DEBUGGING)
+        echo "=================================="
+        echo "🔍 DEBUGGING COMPLIANCE CALCULATION"
+        echo "=================================="
+        echo "Input Parameters Received:"
+        echo "  file_weight: ${{ inputs.file_weight }}"
+        echo "  severity_weight: ${{ inputs.severity_weight }}"
+        echo "  high_weight: ${{ inputs.high_weight }}"
+        echo "  medium_weight: ${{ inputs.medium_weight }}"
+        echo "  low_weight: ${{ inputs.low_weight }}"
+        echo "  info_weight: ${{ inputs.info_weight }}"
+        echo ""
+        echo "🔍 TESTING COMPLIANCE CONFIG:"
+        python3 -c "
+import sys
+sys.path.append('.')
+try:
+    from compliance_config import ComplianceConfig
+    print('✅ compliance_config imported successfully')
+    
+    # Test default config
+    default_config = ComplianceConfig()
+    print(f'✅ Default config: file={default_config.file_based_weight}%, severity={default_config.severity_based_weight}%')
+    print(f'✅ Default priorities: {default_config.priority_weights}')
+    
+    # Test configured config with workflow inputs
+    configured_config = ComplianceConfig(
+        file_based_weight=${{ inputs.file_weight }},
+        severity_based_weight=${{ inputs.severity_weight }},
+        priority_weights={
+            'HIGH': ${{ inputs.high_weight }},
+            'MEDIUM': ${{ inputs.medium_weight }},
+            'LOW': ${{ inputs.low_weight }},
+            'INFO': ${{ inputs.info_weight }}
+        }
+    )
+    print(f'✅ Configured config: file={configured_config.file_based_weight}%, severity={configured_config.severity_based_weight}%')
+    print(f'✅ Configured priorities: {configured_config.priority_weights}')
+    
+except Exception as e:
+    print(f'❌ ERROR with compliance_config: {e}')
+    import traceback
+    traceback.print_exc()
+"
+        echo "=================================="
+        
         # 🔧 CRITICAL FIX: Force Unified Compliance Calculation
         if [ -f "quality-report.json" ]; then
           echo "✅ Analysis completed successfully"
