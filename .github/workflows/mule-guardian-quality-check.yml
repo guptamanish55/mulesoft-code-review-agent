@@ -511,7 +511,17 @@ jobs:
           echo '                self.violations.append(violation)' >> calc_compliance.py
           echo '    ' >> calc_compliance.py
           echo '    report = MockReport(data)' >> calc_compliance.py
-          echo '    config = ComplianceConfig()' >> calc_compliance.py
+          echo '    # Use configurable parameters from workflow inputs' >> calc_compliance.py
+          echo '    config = ComplianceConfig(' >> calc_compliance.py
+          echo '        file_based_weight=${{ inputs.file_weight }},' >> calc_compliance.py
+          echo '        severity_based_weight=${{ inputs.severity_weight }},' >> calc_compliance.py
+          echo '        priority_weights={' >> calc_compliance.py
+          echo '            "HIGH": ${{ inputs.high_weight }},' >> calc_compliance.py
+          echo '            "MEDIUM": ${{ inputs.medium_weight }},' >> calc_compliance.py
+          echo '            "LOW": ${{ inputs.low_weight }},' >> calc_compliance.py
+          echo '            "INFO": ${{ inputs.info_weight }}' >> calc_compliance.py
+          echo '        }' >> calc_compliance.py
+          echo '    )' >> calc_compliance.py
           echo '    compliance = calculate_compliance_percentage(report, config)' >> calc_compliance.py
           echo '    print(f"{compliance:.2f}")' >> calc_compliance.py
           echo '    ' >> calc_compliance.py
