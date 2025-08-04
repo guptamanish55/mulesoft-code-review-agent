@@ -168,14 +168,27 @@ jobs:
         echo "  JAVA_HOME: $JAVA_HOME"
         echo "  Java executable: $(which java)"
         
-        # Download PMD using the specified version parameter
+        # Download PMD using the specified version parameter with fallback URLs
         echo "📥 Downloading PMD ${{ inputs.pmd_version }}..."
-        wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ inputs.pmd_version }}/pmd-bin-${{ inputs.pmd_version }}.zip"
-        unzip pmd-bin-${{ inputs.pmd_version }}.zip
         
-        # Clean installation
+        # Try different URL formats for PMD downloads (GitHub has different formats for different versions)
+        if wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ inputs.pmd_version }}/pmd-dist-${{ inputs.pmd_version }}-bin.zip" 2>/dev/null; then
+          echo "✅ Downloaded PMD using pmd-dist format"
+          unzip pmd-dist-${{ inputs.pmd_version }}-bin.zip
+          PMD_DIR="pmd-bin-${{ inputs.pmd_version }}"
+        elif wget "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${{ inputs.pmd_version }}/pmd-bin-${{ inputs.pmd_version }}.zip" 2>/dev/null; then
+          echo "✅ Downloaded PMD using pmd-bin format"
+          unzip pmd-bin-${{ inputs.pmd_version }}.zip
+          PMD_DIR="pmd-bin-${{ inputs.pmd_version }}"
+        else
+          echo "❌ Failed to download PMD ${{ inputs.pmd_version }}"
+          echo "📋 Available PMD versions: https://github.com/pmd/pmd/releases"
+          exit 1
+        fi
+        
+        # Clean installation  
         sudo rm -rf /opt/pmd
-        sudo mv pmd-bin-${{ inputs.pmd_version }} /opt/pmd
+        sudo mv "$PMD_DIR" /opt/pmd
         
         echo "✅ PMD ${{ inputs.pmd_version }} installed to /opt/pmd"
         
