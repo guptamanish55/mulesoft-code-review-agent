@@ -498,17 +498,25 @@ jobs:
           echo "❓ Check the analysis_output.log for more details"
         fi
         
-        # 🔍 DEBUG: Check Configuration Parameters (TEMPORARY DEBUGGING)
-        echo "=================================="
-        echo "🔍 DEBUGGING COMPLIANCE CALCULATION"
-        echo "=================================="
-        echo "Input Parameters Received:"
+        # 🔍 DEBUG: Check Configuration Parameters (CRITICAL DEBUG)
+        echo "🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍"
+        echo "🔍 CRITICAL: DEBUGGING COMPLIANCE CALCULATION"
+        echo "🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍"
+        echo "📋 WORKFLOW INPUT PARAMETERS:"
         echo "  file_weight: ${{ inputs.file_weight }}"
         echo "  severity_weight: ${{ inputs.severity_weight }}"
         echo "  high_weight: ${{ inputs.high_weight }}"
         echo "  medium_weight: ${{ inputs.medium_weight }}"
         echo "  low_weight: ${{ inputs.low_weight }}"
         echo "  info_weight: ${{ inputs.info_weight }}"
+        echo ""
+        echo "📋 ENVIRONMENT VARIABLES SET:"
+        echo "  COMPLIANCE_FILE_WEIGHT: $COMPLIANCE_FILE_WEIGHT"
+        echo "  COMPLIANCE_SEVERITY_WEIGHT: $COMPLIANCE_SEVERITY_WEIGHT"
+        echo "  COMPLIANCE_HIGH_WEIGHT: $COMPLIANCE_HIGH_WEIGHT"
+        echo "  COMPLIANCE_MEDIUM_WEIGHT: $COMPLIANCE_MEDIUM_WEIGHT"
+        echo "  COMPLIANCE_LOW_WEIGHT: $COMPLIANCE_LOW_WEIGHT"
+        echo "  COMPLIANCE_INFO_WEIGHT: $COMPLIANCE_INFO_WEIGHT"
         echo ""
         echo "🔍 PMD ANALYSIS NORMALIZATION DEBUG:"
         echo "======================================"
@@ -569,7 +577,10 @@ jobs:
           
           # Force unified compliance calculation (ignore stored values)
           echo ""
-          echo "🔧 FORCING UNIFIED COMPLIANCE CALCULATION"
+          echo "🔧🔧🔧🔧🔧 FORCING UNIFIED COMPLIANCE CALCULATION 🔧🔧🔧🔧🔧"
+          echo "🔧 This should override any stored compliance values"
+          echo "🔧 Using workflow input parameters directly"  
+          echo "🔧 Creating Python calculation script..."
           # Create a temporary Python script for complex calculation using echo
           echo 'import json' > calc_compliance.py
           echo 'import sys' >> calc_compliance.py
@@ -605,14 +616,24 @@ jobs:
           echo '        }' >> calc_compliance.py
           echo '    )' >> calc_compliance.py
           echo '    compliance = calculate_compliance_percentage(report, config)' >> calc_compliance.py
-          echo '    print(f"{compliance:.2f}")' >> calc_compliance.py
+          echo '    print(f"🔧 UNIFIED CALCULATION RESULT: {compliance:.2f}%")' >> calc_compliance.py
+          echo '    print(f"🔧 Files scanned: {report.files_scanned}")' >> calc_compliance.py
+          echo '    print(f"🔧 Total violations: {report.total_violations}")' >> calc_compliance.py
+          echo '    print(f"🔧 Config used - file_weight: {config.file_based_weight}, severity_weight: {config.severity_based_weight}")' >> calc_compliance.py
+          echo '    print(f"🔧 Priority weights: {config.priority_weights}")' >> calc_compliance.py
           echo '    ' >> calc_compliance.py
           echo 'except ImportError as e:' >> calc_compliance.py
-          echo '    print("ERROR: compliance_config not available")' >> calc_compliance.py
-          echo '    sys.exit(1)' >> calc_compliance.py
+          echo '    print("🔧 ERROR: compliance_config not available")' >> calc_compliance.py
           echo 'except Exception as e:' >> calc_compliance.py
-          echo '    print(f"ERROR: {e}")' >> calc_compliance.py
-          echo '    sys.exit(1)' >> calc_compliance.py
+          echo '    print(f"🔧 ERROR in calculation: {e}")' >> calc_compliance.py
+          echo '    import traceback' >> calc_compliance.py
+          echo '    traceback.print_exc()' >> calc_compliance.py
+          echo '' >> calc_compliance.py
+          echo 'print("🔧 Executing unified compliance calculation...")' >> calc_compliance.py
+          
+          # Execute the Python script
+          echo "🔧 Running unified compliance calculation script..."
+          python3 calc_compliance.py || echo "🔧 Python script execution failed"
           
           UNIFIED_COMPLIANCE=$(python3 calc_compliance.py)
           rm -f calc_compliance.py
