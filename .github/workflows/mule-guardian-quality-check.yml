@@ -619,24 +619,31 @@ jobs:
           echo '        }' >> calc_compliance.py
           echo '    )' >> calc_compliance.py
           echo '    compliance = calculate_compliance_percentage(report, config)' >> calc_compliance.py
-          echo '    print(f"🔧 UNIFIED CALCULATION RESULT: {compliance:.2f}%")' >> calc_compliance.py
-          echo '    print(f"🔧 Files scanned: {report.files_scanned}")' >> calc_compliance.py
-          echo '    print(f"🔧 Total violations: {report.total_violations}")' >> calc_compliance.py
-          echo '    print(f"🔧 Config used - file_weight: {config.file_based_weight}, severity_weight: {config.severity_based_weight}")' >> calc_compliance.py
-          echo '    print(f"🔧 Priority weights: {config.priority_weights}")' >> calc_compliance.py
+          echo '    import sys' >> calc_compliance.py
+          echo '    # Output debug info to stderr (visible in logs)' >> calc_compliance.py
+          echo '    print(f"🔧 UNIFIED CALCULATION RESULT: {compliance:.2f}%", file=sys.stderr)' >> calc_compliance.py
+          echo '    print(f"🔧 Files scanned: {report.files_scanned}", file=sys.stderr)' >> calc_compliance.py
+          echo '    print(f"🔧 Total violations: {report.total_violations}", file=sys.stderr)' >> calc_compliance.py
+          echo '    print(f"🔧 Config used - file_weight: {config.file_based_weight}, severity_weight: {config.severity_based_weight}", file=sys.stderr)' >> calc_compliance.py
+          echo '    print(f"🔧 Priority weights: {config.priority_weights}", file=sys.stderr)' >> calc_compliance.py
+          echo '    # Output ONLY the compliance number to stdout (for capture)' >> calc_compliance.py
+          echo '    print(f"{compliance:.2f}")' >> calc_compliance.py
           echo '    ' >> calc_compliance.py
           echo 'except ImportError as e:' >> calc_compliance.py
-          echo '    print("🔧 ERROR: compliance_config not available")' >> calc_compliance.py
+          echo '    import sys' >> calc_compliance.py
+          echo '    print("🔧 ERROR: compliance_config not available", file=sys.stderr)' >> calc_compliance.py
+          echo '    sys.exit(1)' >> calc_compliance.py
           echo 'except Exception as e:' >> calc_compliance.py
-          echo '    print(f"🔧 ERROR in calculation: {e}")' >> calc_compliance.py
+          echo '    import sys' >> calc_compliance.py
+          echo '    print(f"🔧 ERROR in calculation: {e}", file=sys.stderr)' >> calc_compliance.py
           echo '    import traceback' >> calc_compliance.py
-          echo '    traceback.print_exc()' >> calc_compliance.py
-          echo '' >> calc_compliance.py
-          echo 'print("🔧 Executing unified compliance calculation...")' >> calc_compliance.py
+          echo '    traceback.print_exc(file=sys.stderr)' >> calc_compliance.py
+          echo '    sys.exit(1)' >> calc_compliance.py
           
           # Execute the Python script
           echo "🔧 Running unified compliance calculation script..."
-          python3 calc_compliance.py || echo "🔧 Python script execution failed"
+          echo "🔧 Debug output (stderr) will show calculation details..."
+          echo "🔧 Stdout will contain only the compliance number for capture..."
           
           UNIFIED_COMPLIANCE=$(python3 calc_compliance.py)
           rm -f calc_compliance.py
