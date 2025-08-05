@@ -401,38 +401,39 @@ jobs:
         find . -name "*.pyc" -delete
         find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
         
-        # 🎯 SIMPLE FIX: Remove problematic files (let Python agent handle exclusions)
-        echo "🎯 REMOVING PROBLEMATIC FILES:"
-        echo "  Let Python agent handle exclusions, just remove files that cause issues"
+        # 🎯 CRITICAL FIX: Move ruleset to separate location (not in analysis directory)
+        echo "🎯 CRITICAL FIX: SEPARATING RULESET FROM ANALYSIS FILES"
+        echo "  Problem: Ruleset file gets analyzed as Mule code (line 503 in screenshot)"
+        echo "  Solution: Move ruleset to /tmp, reference it from there"
         
-        # Remove ruleset files that get analyzed as Mule code (main issue from debug)
+        # Move ruleset to /tmp so it's not in analysis directory
+        mkdir -p /tmp/mule-guardian-rulesets
         if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
-          mv comprehensive-mulesoft-ruleset-no-debug.xml comprehensive-mulesoft-ruleset-no-debug.xml.backup
-          echo "    ✅ Backed up main ruleset file"
+          cp comprehensive-mulesoft-ruleset-no-debug.xml /tmp/mule-guardian-rulesets/
+          rm comprehensive-mulesoft-ruleset-no-debug.xml
+          echo "    ✅ Moved main ruleset to /tmp (removed from analysis directory)"
         fi
         
         if [ -f "mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
-          mv mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml.backup
-          echo "    ✅ Backed up mule-guardian ruleset file"
+          rm mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml
+          echo "    ✅ Removed mule-guardian ruleset copy"
         fi
         
-        # Restore the main ruleset for PMD execution
-        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml.backup" ]; then
-          cp comprehensive-mulesoft-ruleset-no-debug.xml.backup comprehensive-mulesoft-ruleset-no-debug.xml
-          echo "    ✅ Restored main ruleset for PMD execution"
-        fi
+        # Remove other problematic files that UI excludes
+        find . -name "application-types.xml" -delete 2>/dev/null || true
+        echo "    ✅ Removed application-types.xml files (UI excludes these)"
         
-        echo "  📊 Files after cleanup:"
+        echo "  📊 Files remaining for analysis:"
         find "${{ inputs.analysis_target }}" -name "*.xml" -type f | wc -l
-        echo "  📋 Python agent will handle exclusions with built-in logic"
+        echo "  📋 Should now match UI file count (~9 files)"
         
         # Run the analysis and capture output
         echo "🔍 Starting Mule Guardian analysis with ENHANCED DIAGNOSTICS..."
         echo "🚀 EXPECTED: Should see 'PMD 6.x FORMAT' messages and NO 'check --file-list' errors"
         echo "🚀 EXPECTED: Should see 'PARSING PMD XML OUTPUT' and violation count logs"
         echo "🚀 If you see 'Violations found: 180' but 'Total violations extracted: 0', it's a parsing bug"
-        echo "🎯 Using Python agent's built-in exclusion logic"
-        python -B mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
+        echo "🎯 Using ruleset from /tmp (not in analysis directory)"
+        python -B mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" /tmp/mule-guardian-rulesets/comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
         
         # Check what type of analysis was actually used
         echo ""
