@@ -206,8 +206,20 @@ def calculate_compliance_percentage(report, config: Optional[ComplianceConfig] =
         files_with_violations_count = len(files_with_violations)
         clean_files = total_files - files_with_violations_count
         
-        # Factor 1: File-based compliance (configurable weight)
-        file_based_compliance = (clean_files / total_files) * 100
+        # Factor 1: File-based compliance (configurable weight) - IMPROVED
+        if total_files > 0:
+            # More reasonable file-based calculation - not all-or-nothing
+            # Give partial credit based on violation density
+            avg_violations_per_file = total_violations / total_files if total_files > 0 else 0
+            
+            if avg_violations_per_file <= 5:
+                file_based_compliance = max(30, 100 - (avg_violations_per_file * 10))  # 50-100% range
+            elif avg_violations_per_file <= 15:
+                file_based_compliance = max(10, 50 - ((avg_violations_per_file - 5) * 3))  # 20-50% range
+            else:
+                file_based_compliance = max(5, 20 - ((avg_violations_per_file - 15) * 0.5))  # 5-20% range
+        else:
+            file_based_compliance = 100
         
         # Factor 2: Severity-adjusted compliance (configurable weight)
         violations_by_priority = getattr(report, 'violations_by_priority', {})
@@ -217,46 +229,40 @@ def calculate_compliance_percentage(report, config: Optional[ComplianceConfig] =
             weight = config.priority_weights.get(priority, 1)
             total_severity_score += count * weight
         
-        # Calculate severity-adjusted compliance
-        if files_with_violations_count > 0 and total_violations > 0:
-            # More realistic severity penalty calculation
-            # Base penalty on violations per file with progressive scaling
-            violations_per_file = total_violations / total_files
-            
-            # Progressive penalty scale: more violations per file = higher penalty
-            if violations_per_file <= 1:
-                base_penalty = violations_per_file * 15  # Up to 15% penalty
-            elif violations_per_file <= 3:
-                base_penalty = 15 + (violations_per_file - 1) * 20  # 15-55% penalty
-            elif violations_per_file <= 5:
-                base_penalty = 55 + (violations_per_file - 3) * 15  # 55-85% penalty
-            else:
-                base_penalty = 85 + min(15, (violations_per_file - 5) * 3)  # 85-100% penalty
-            
-            # Apply severity weighting
-            high_weight = config.priority_weights.get('HIGH', 10)
-            medium_weight = config.priority_weights.get('MEDIUM', 5)
-            low_weight = config.priority_weights.get('LOW', 2)
-            
-            # Calculate weighted severity multiplier
+        # Calculate severity-adjusted compliance (SIMPLIFIED - matching UI expectations)
+        if total_violations > 0:
+            # Calculate weighted severity score
             high_violations = violations_by_priority.get('HIGH', 0)
             medium_violations = violations_by_priority.get('MEDIUM', 0)
             low_violations = violations_by_priority.get('LOW', 0)
+            info_violations = violations_by_priority.get('INFO', 0)
             
-            if total_violations > 0:
-                severity_multiplier = (
-                    (high_violations * high_weight + 
-                     medium_violations * medium_weight + 
-                     low_violations * low_weight) / 
-                    (total_violations * low_weight)  # Normalize against LOW weight baseline
-                )
-                severity_multiplier = min(2.0, severity_multiplier)  # Cap at 2x multiplier
+            high_weight = config.priority_weights.get('HIGH', 10)
+            medium_weight = config.priority_weights.get('MEDIUM', 5)
+            low_weight = config.priority_weights.get('LOW', 2)
+            info_weight = config.priority_weights.get('INFO', 1)
+            
+            # Calculate severity score
+            severity_score = (
+                high_violations * high_weight +
+                medium_violations * medium_weight +
+                low_violations * low_weight +
+                info_violations * info_weight
+            )
+            
+            # Simple penalty calculation - much more reasonable
+            # Penalty increases with severity score relative to total files
+            severity_per_file = severity_score / total_files
+            
+            # More reasonable penalty scale (max ~80% penalty, not 100%)
+            if severity_per_file <= 10:
+                penalty_percentage = severity_per_file * 2  # 0-20% penalty
+            elif severity_per_file <= 30:
+                penalty_percentage = 20 + (severity_per_file - 10) * 1.5  # 20-50% penalty  
             else:
-                severity_multiplier = 1.0
+                penalty_percentage = 50 + min(30, (severity_per_file - 30) * 0.5)  # 50-80% penalty
             
-            # Apply severity multiplier to base penalty
-            final_penalty = min(100, base_penalty * severity_multiplier)
-            severity_adjusted_compliance = max(0, 100 - final_penalty)
+            severity_adjusted_compliance = max(20, 100 - penalty_percentage)  # Minimum 20% compliance
         else:
             severity_adjusted_compliance = 100
         
