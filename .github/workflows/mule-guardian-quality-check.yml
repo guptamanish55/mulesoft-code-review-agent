@@ -401,55 +401,38 @@ jobs:
         find . -name "*.pyc" -delete
         find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
         
-        # 🎯 CRITICAL: Create CLEAN project directory (like UI does)
-        echo "🎯 CREATING CLEAN PROJECT DIRECTORY (matching UI behavior):"
-        echo "  UI creates temporary directory with only project files"
-        echo "  GitHub Actions must do the same to get identical results"
+        # 🎯 SIMPLE FIX: Remove problematic files (let Python agent handle exclusions)
+        echo "🎯 REMOVING PROBLEMATIC FILES:"
+        echo "  Let Python agent handle exclusions, just remove files that cause issues"
         
-        # Create clean analysis directory (mimicking UI's tempfile.mkdtemp)
-        CLEAN_PROJECT_DIR="clean_project_analysis"
-        mkdir -p "$CLEAN_PROJECT_DIR"
-        
-        # Copy ONLY MuleSoft project files (not CI/CD, docs, etc.)
-        echo "  📁 Copying project files to clean directory..."
-        
-        # Find the actual MuleSoft project directory
-        if [ -d "${{ inputs.analysis_target }}/src" ]; then
-          echo "    ✅ Found MuleSoft project structure with src/ directory"
-          cp -r "${{ inputs.analysis_target }}/src" "$CLEAN_PROJECT_DIR/"
+        # Remove ruleset files that get analyzed as Mule code (main issue from debug)
+        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          mv comprehensive-mulesoft-ruleset-no-debug.xml comprehensive-mulesoft-ruleset-no-debug.xml.backup
+          echo "    ✅ Backed up main ruleset file"
         fi
         
-        if [ -f "${{ inputs.analysis_target }}/pom.xml" ]; then
-          echo "    ✅ Copying pom.xml"
-          cp "${{ inputs.analysis_target }}/pom.xml" "$CLEAN_PROJECT_DIR/"
+        if [ -f "mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml" ]; then
+          mv mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml mule-guardian/comprehensive-mulesoft-ruleset-no-debug.xml.backup
+          echo "    ✅ Backed up mule-guardian ruleset file"
         fi
         
-        if [ -f "${{ inputs.analysis_target }}/mule-artifact.json" ]; then
-          echo "    ✅ Copying mule-artifact.json"  
-          cp "${{ inputs.analysis_target }}/mule-artifact.json" "$CLEAN_PROJECT_DIR/"
+        # Restore the main ruleset for PMD execution
+        if [ -f "comprehensive-mulesoft-ruleset-no-debug.xml.backup" ]; then
+          cp comprehensive-mulesoft-ruleset-no-debug.xml.backup comprehensive-mulesoft-ruleset-no-debug.xml
+          echo "    ✅ Restored main ruleset for PMD execution"
         fi
         
-        # Copy any .raml files
-        find "${{ inputs.analysis_target }}" -name "*.raml" -not -path "*/target/*" -not -path "*/.git/*" | while read raml_file; do
-          echo "    ✅ Copying RAML file: $(basename "$raml_file")"
-          cp "$raml_file" "$CLEAN_PROJECT_DIR/" 2>/dev/null || true
-        done
-        
-        echo "  📊 Clean directory contents:"
-        find "$CLEAN_PROJECT_DIR" -name "*.xml" -type f | wc -l
-        echo "  📋 Files in clean directory:"
-        find "$CLEAN_PROJECT_DIR" -name "*.xml" -type f | head -10
-        
-        # Use the clean directory for analysis (like UI does)
-        ANALYSIS_TARGET="$CLEAN_PROJECT_DIR"
+        echo "  📊 Files after cleanup:"
+        find "${{ inputs.analysis_target }}" -name "*.xml" -type f | wc -l
+        echo "  📋 Python agent will handle exclusions with built-in logic"
         
         # Run the analysis and capture output
         echo "🔍 Starting Mule Guardian analysis with ENHANCED DIAGNOSTICS..."
         echo "🚀 EXPECTED: Should see 'PMD 6.x FORMAT' messages and NO 'check --file-list' errors"
         echo "🚀 EXPECTED: Should see 'PARSING PMD XML OUTPUT' and violation count logs"
         echo "🚀 If you see 'Violations found: 180' but 'Total violations extracted: 0', it's a parsing bug"
-        echo "🎯 Analyzing CLEAN directory (like UI): $ANALYSIS_TARGET"
-        python -B mulesoft_ai_code_review_agent.py "$ANALYSIS_TARGET" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
+        echo "🎯 Using Python agent's built-in exclusion logic"
+        python -B mulesoft_ai_code_review_agent.py "${{ inputs.analysis_target }}" comprehensive-mulesoft-ruleset-no-debug.xml -o quality-report.json -v 2>&1 | tee analysis_output.log
         
         # Check what type of analysis was actually used
         echo ""
