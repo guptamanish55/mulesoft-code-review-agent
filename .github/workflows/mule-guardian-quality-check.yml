@@ -594,7 +594,10 @@ jobs:
           echo '    ' >> calc_compliance.py
           echo '    class MockReport:' >> calc_compliance.py
           echo '        def __init__(self, data):' >> calc_compliance.py
-          echo '            self.files_scanned = data.get("files_scanned", 0)' >> calc_compliance.py
+          echo '            # 🔧 CRITICAL FIX: Use PMD file count, not stored file count' >> calc_compliance.py
+          echo '    ' >> calc_compliance.py
+          PMD_FILE_COUNT=$(find "${{ inputs.analysis_target }}" -name "*.xml" -type f | wc -l)
+          echo "            self.files_scanned = $PMD_FILE_COUNT  # Use actual PMD file count" >> calc_compliance.py
           echo '            self.total_violations = data.get("total_violations", 0)' >> calc_compliance.py
           echo '            self.violations_by_priority = data.get("violations_by_priority", {})' >> calc_compliance.py
           echo '            self.violations = []' >> calc_compliance.py
